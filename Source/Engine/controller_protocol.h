@@ -15,11 +15,14 @@ enum { CONTROLLER_REPLY_SIZE = 14 };
 /* Moni-A returns the six-byte model, a comma and seven device-specific bytes.
  * The suffix identifies an instance, not compatibility. This model still uses
  * the fixed 112-LED layout; the reply does not negotiate a strip length.
+ * Firmware may append CR LF after the binary identity.
  */
 static bool controller_reply_is_compatible(const uint8_t *reply, size_t length) {
     static const uint8_t model[] = {'S', 'K', '0', 'L', '3', '4', ','};
-    return reply != NULL && length == CONTROLLER_REPLY_SIZE &&
-        memcmp(reply, model, sizeof(model)) == 0;
+    if (reply == NULL || (length != CONTROLLER_REPLY_SIZE && length != CONTROLLER_REPLY_SIZE + 2)) return false;
+    if (memcmp(reply, model, sizeof(model)) != 0) return false;
+    return length == CONTROLLER_REPLY_SIZE ||
+        (reply[CONTROLLER_REPLY_SIZE] == '\r' && reply[CONTROLLER_REPLY_SIZE + 1] == '\n');
 }
 
 /* Send only the identity query on an already configured, exclusive port.
@@ -33,7 +36,8 @@ static bool query_compatible_controller(int fd, int timeout_ms) {
     int64_t deadline = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 + timeout_ms;
     uint8_t reply[128];
     size_t received = 0;
-    while (received < CONTROLLER_REPLY_SIZE) {
+    while (received < CONTROLLER_REPLY_SIZE ||
+           (received == CONTROLLER_REPLY_SIZE + 1 && reply[CONTROLLER_REPLY_SIZE] == '\r')) {
         if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return false;
         int64_t remaining = deadline - ((int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000);
         if (remaining <= 0) return false;

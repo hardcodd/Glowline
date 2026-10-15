@@ -24,7 +24,7 @@ Glowline is a native macOS menu-bar app for screen-synced monitor backlighting w
 | Operating system | macOS 15 or later |
 | Architecture | Apple Silicon (arm64) |
 | Controller | Skydimo SK0L34, fixed 112-LED layout |
-| Device verification | Complete 14-byte `Moni-A` response: `SK0L34,` plus seven device-specific bytes; no serial-number lock |
+| Device verification | Complete `Moni-A` response: `SK0L34,` plus seven device-specific bytes, optionally followed by CR LF; no serial-number lock |
 | Serial transport | 115200 baud; USB serial port selected in settings |
 | Screen mode | macOS Screen Recording permission |
 | Interface language | Russian |

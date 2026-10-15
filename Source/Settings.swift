@@ -43,6 +43,55 @@ struct Settings: Codable, Equatable {
     var reconnect = true
     var offOnQuit = true
 
+    private enum CodingKeys: String, CodingKey {
+        case enabled, mode, brightness, warmth, saturation, gamma, redGain, greenGain, blueGain, blackThreshold, edgeDepth, releaseSeconds, attackSeconds, mirrored, offset, leftEnabled, topEnabled, rightEnabled, bottomEnabled, leftGain, topGain, rightGain, bottomGain, fps, captureFps, keepaliveSeconds, skipUnchanged, primary, secondary, speed, reverse, port, displayID, theme, launchAtLogin, startHidden, reconnect, offOnQuit
+    }
+    init() {}
+    /// Missing fields inherit current defaults; present invalid values still fail.
+    init(from decoder: Decoder) throws {
+        self.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        if values.contains(.enabled) { enabled = try values.decode(Bool.self, forKey: .enabled) }
+        if values.contains(.mode) { mode = try values.decode(Int.self, forKey: .mode) }
+        if values.contains(.brightness) { brightness = try values.decode(Double.self, forKey: .brightness) }
+        if values.contains(.warmth) { warmth = try values.decode(Double.self, forKey: .warmth) }
+        if values.contains(.saturation) { saturation = try values.decode(Double.self, forKey: .saturation) }
+        if values.contains(.gamma) { gamma = try values.decode(Double.self, forKey: .gamma) }
+        if values.contains(.redGain) { redGain = try values.decode(Double.self, forKey: .redGain) }
+        if values.contains(.greenGain) { greenGain = try values.decode(Double.self, forKey: .greenGain) }
+        if values.contains(.blueGain) { blueGain = try values.decode(Double.self, forKey: .blueGain) }
+        if values.contains(.blackThreshold) { blackThreshold = try values.decode(Double.self, forKey: .blackThreshold) }
+        if values.contains(.edgeDepth) { edgeDepth = try values.decode(Double.self, forKey: .edgeDepth) }
+        if values.contains(.releaseSeconds) { releaseSeconds = try values.decode(Double.self, forKey: .releaseSeconds) }
+        if values.contains(.attackSeconds) { attackSeconds = try values.decode(Double.self, forKey: .attackSeconds) }
+        if values.contains(.mirrored) { mirrored = try values.decode(Bool.self, forKey: .mirrored) }
+        if values.contains(.offset) { offset = try values.decode(Int.self, forKey: .offset) }
+        if values.contains(.leftEnabled) { leftEnabled = try values.decode(Bool.self, forKey: .leftEnabled) }
+        if values.contains(.topEnabled) { topEnabled = try values.decode(Bool.self, forKey: .topEnabled) }
+        if values.contains(.rightEnabled) { rightEnabled = try values.decode(Bool.self, forKey: .rightEnabled) }
+        if values.contains(.bottomEnabled) { bottomEnabled = try values.decode(Bool.self, forKey: .bottomEnabled) }
+        if values.contains(.leftGain) { leftGain = try values.decode(Double.self, forKey: .leftGain) }
+        if values.contains(.topGain) { topGain = try values.decode(Double.self, forKey: .topGain) }
+        if values.contains(.rightGain) { rightGain = try values.decode(Double.self, forKey: .rightGain) }
+        if values.contains(.bottomGain) { bottomGain = try values.decode(Double.self, forKey: .bottomGain) }
+        if values.contains(.fps) { fps = try values.decode(Double.self, forKey: .fps) }
+        if values.contains(.captureFps) { captureFps = try values.decode(Int.self, forKey: .captureFps) }
+        if values.contains(.keepaliveSeconds) { keepaliveSeconds = try values.decode(Double.self, forKey: .keepaliveSeconds) }
+        if values.contains(.skipUnchanged) { skipUnchanged = try values.decode(Bool.self, forKey: .skipUnchanged) }
+        if values.contains(.primary) { primary = try values.decode(RGB.self, forKey: .primary) }
+        if values.contains(.secondary) { secondary = try values.decode(RGB.self, forKey: .secondary) }
+        if values.contains(.speed) { speed = try values.decode(Double.self, forKey: .speed) }
+        if values.contains(.reverse) { reverse = try values.decode(Bool.self, forKey: .reverse) }
+        if values.contains(.port) { port = try values.decode(String.self, forKey: .port) }
+        if values.contains(.displayID) { displayID = try values.decode(UInt32.self, forKey: .displayID) }
+        if values.contains(.theme) { theme = try values.decode(String.self, forKey: .theme) }
+        if values.contains(.launchAtLogin) { launchAtLogin = try values.decode(Bool.self, forKey: .launchAtLogin) }
+        if values.contains(.startHidden) { startHidden = try values.decode(Bool.self, forKey: .startHidden) }
+        if values.contains(.reconnect) { reconnect = try values.decode(Bool.self, forKey: .reconnect) }
+        if values.contains(.offOnQuit) { offOnQuit = try values.decode(Bool.self, forKey: .offOnQuit) }
+        validate()
+    }
+
     mutating func validate() {
         mode = min(5, max(0, mode)); brightness = brightness.clamped(0...1)
         warmth = warmth.clamped(0...0.9); saturation = saturation.clamped(0...2)
@@ -68,15 +117,23 @@ struct Settings: Codable, Equatable {
     }
     /// Merge additive future settings with defaults while rejecting invalid value types.
     static func decodeMerged(_ data: Data) throws -> Settings {
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
-        var merged = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Settings())) as! [String: Any]
-        merged.merge(object) { _, new in new }
-        var result = try JSONDecoder().decode(Settings.self, from: JSONSerialization.data(withJSONObject: merged))
-        result.validate(); return result
+        try JSONDecoder().decode(Settings.self, from: data)
     }
 }
 struct Profile: Codable, Identifiable { var id = UUID(); var name: String; var settings: Settings }
-struct SavedState: Codable { var schemaVersion = 1; var settings: Settings; var profiles: [Profile] }
+struct SavedState: Codable {
+    var schemaVersion = 1
+    var settings: Settings
+    var profiles: [Profile]
+
+    /// Shared startup/import boundary; reject future schemas without replacing data.
+    static func decode(_ data: Data) throws -> SavedState {
+        guard data.count < 1_000_000 else { throw CocoaError(.fileReadTooLarge) }
+        let saved = try JSONDecoder().decode(SavedState.self, from: data)
+        guard saved.schemaVersion == 1 else { throw CocoaError(.coderReadCorrupt) }
+        return saved
+    }
+}
 
 /// Behavior tests run without touching USB, permissions, login items, or preferences.
 func runSettingsTests() throws {
@@ -102,5 +159,13 @@ func runSettingsTests() throws {
     let restored = try JSONDecoder().decode(SavedState.self, from: JSONEncoder().encode(saved))
     precondition(restored.profiles.first?.settings == defaults)
     do { _ = try Settings.decodeMerged(Data("{\"warmth\":\"bad\"}".utf8)); preconditionFailure("Invalid type accepted") } catch {}
+    // Exercise the exact persisted-state decoder used at startup and import.
+    let legacy = Data("{\"schemaVersion\":1,\"settings\":{\"brightness\":0.37},\"profiles\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Legacy\",\"settings\":{\"warmth\":0.8}}]}".utf8)
+    let legacyState = try SavedState.decode(legacy)
+    precondition(legacyState.settings.brightness == 0.37 && legacyState.settings.warmth == 0.5)
+    precondition(legacyState.profiles[0].settings.warmth == 0.8 && legacyState.profiles[0].settings.port.isEmpty)
+    for invalid in ["{\"schemaVersion\":2,\"settings\":{},\"profiles\":[]}", "{\"schemaVersion\":1,\"settings\":{\"warmth\":null},\"profiles\":[]}"] {
+        do { _ = try SavedState.decode(Data(invalid.utf8)); preconditionFailure("Invalid saved state accepted") } catch {}
+    }
     print("Settings, migration, profile and engine contracts passed")
 }

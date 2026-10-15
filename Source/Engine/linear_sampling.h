@@ -1,5 +1,5 @@
 #pragma once
-#include "skydimo_plugin_c_api.h"
+#include "rgb.h"
 #include <math.h>
 #include <string.h>
 
@@ -16,12 +16,12 @@ static uint8_t linear_to_srgb8(float value){
  * requested extended-linear-sRGB space. Preserve padded row strides and sample
  * the same cell centers as the original physical layout. */
 static void sample_linear_grid(const uint8_t *pixels,size_t fw,size_t fh,size_t stride,
-                               size_t width,size_t height,SkydimoRgb *out,size_t count){
+                               size_t width,size_t height,GlowlineRGB *out,size_t count){
  for(size_t i=0;i<count;i++){
-  if(!pixels||!fw||!fh||!width||!height||stride<fw*8||i>=width*height){out[i]=(SkydimoRgb){0,0,0};continue;}
+  if(!pixels||!fw||!fh||!width||!height||stride<fw*8||i>=width*height){out[i]=(GlowlineRGB){0,0,0};continue;}
   size_t x=((2*(i%width)+1)*fw)/(2*width),y=((2*(i/width)+1)*fh)/(2*height);
   if(x>=fw)x=fw-1;if(y>=fh)y=fh-1;
   _Float16 rgba[4];memcpy(rgba,pixels+y*stride+x*8,sizeof(rgba));
-  out[i]=(SkydimoRgb){linear_to_srgb8(rgba[0]),linear_to_srgb8(rgba[1]),linear_to_srgb8(rgba[2])};
+  out[i]=(GlowlineRGB){linear_to_srgb8(rgba[0]),linear_to_srgb8(rgba[1]),linear_to_srgb8(rgba[2])};
  }
 }

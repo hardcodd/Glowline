@@ -3,7 +3,7 @@
 /* Linear-light depth integration keeps edge influence continuous as windows move.
  * The original cell centers remain available with depth=0. Interior cells are unused. */
 static void sample_edge_grid(const uint8_t *pixels,size_t fw,size_t fh,size_t stride,
- size_t width,size_t height,SkydimoRgb *out,size_t count,double depth){
+ size_t width,size_t height,GlowlineRGB *out,size_t count,double depth){
  if(!isfinite(depth)||depth<=0){sample_linear_grid(pixels,fw,fh,stride,width,height,out,count);return;}
  memset(out,0,count*sizeof(*out));
  if(!pixels||!fw||!fh||width<2||height<2||stride<fw*8)return;
@@ -25,19 +25,19 @@ static void sample_edge_grid(const uint8_t *pixels,size_t fw,size_t fh,size_t st
     weightSum+=weight;
    }
   }
-  if(weightSum>0)out[i]=(SkydimoRgb){linear_to_srgb8(sums[0]/weightSum),linear_to_srgb8(sums[1]/weightSum),linear_to_srgb8(sums[2]/weightSum)};
+  if(weightSum>0)out[i]=(GlowlineRGB){linear_to_srgb8(sums[0]/weightSum),linear_to_srgb8(sums[1]/weightSum),linear_to_srgb8(sums[2]/weightSum)};
  }
 }
 /* Warm only the shared neutral component, preserving saturated RGB primaries. */
-static SkydimoRgb warm_rgb(SkydimoRgb c,double strength){
+static GlowlineRGB warm_rgb(GlowlineRGB c,double strength){
  if(!isfinite(strength))strength=0;strength=fmin(.9,fmax(0,strength));
  double neutral=fmin(c.r,fmin(c.g,c.b));
- return (SkydimoRgb){c.r,(uint8_t)lround(c.g-neutral*strength*.35),(uint8_t)lround(c.b-neutral*strength)};
+ return (GlowlineRGB){c.r,(uint8_t)lround(c.g-neutral*strength*.35),(uint8_t)lround(c.b-neutral*strength)};
 }
-typedef struct {double level,time;SkydimoRgb hue;int initialized;} ReleaseState;
+typedef struct {double level,time;GlowlineRGB hue;int initialized;} ReleaseState;
 /* Immediate attack and hue changes; only brightness falls with elapsed time.
  * A black target retains the last hue until the envelope reaches zero. */
-static SkydimoRgb release_rgb(ReleaseState *s,SkydimoRgb target,double now,double seconds){
+static GlowlineRGB release_rgb(ReleaseState *s,GlowlineRGB target,double now,double seconds){
  double peak=fmax(target.r,fmax(target.g,target.b));
  double dt=s->initialized?fmax(0,now-s->time):0;
  double level=peak;
@@ -47,5 +47,5 @@ static SkydimoRgb release_rgb(ReleaseState *s,SkydimoRgb target,double now,doubl
  double huePeak=fmax(s->hue.r,fmax(s->hue.g,s->hue.b));
  s->level=level;s->time=now;s->initialized=1;
  double scale=huePeak>0?level/huePeak:0;
- return (SkydimoRgb){(uint8_t)lround(s->hue.r*scale),(uint8_t)lround(s->hue.g*scale),(uint8_t)lround(s->hue.b*scale)};
+ return (GlowlineRGB){(uint8_t)lround(s->hue.r*scale),(uint8_t)lround(s->hue.g*scale),(uint8_t)lround(s->hue.b*scale)};
 }

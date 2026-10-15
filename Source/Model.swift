@@ -9,6 +9,7 @@ func tr(_ key: String) -> String { NSLocalizedString(key, comment: "") }
 struct EngineStatus: Decodable {
     var pid: Int32; var timestamp: Double; var serialVerified: Int; var fps: Double
     var brightness: Double; var mirrored: Int; var warmth: Double; var mode: Int; var enabled: Int
+    var captureFailed: Int?; var captureError: String?
     var captureReady: Int; var colors: [[Int]]; var framesSent: Int; var writeMs: Double
     var edgeDepth: Double; var releaseSeconds: Double; var captureFps: Int
     var captureReceived: UInt64; var captureAccepted: UInt64; var targetFps: Double
@@ -40,6 +41,8 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
     private var pending: DispatchWorkItem?
     private var initialized = false
     private var quitting = false
+    private var restarting = false
+    private var recovery = RecoveryPolicy()
     private var lastAttempt = Date.distantPast
     private var launchedAt = Date.distantPast
     private var activePort = ""
@@ -47,8 +50,8 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
     private var hadPermission = false
     private var lastLoginPreference = true
 
-    init() {
-        directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Glowline", isDirectory: true)
+    init(stateDirectory: URL? = nil, inspectSystem: Bool = true) {
+        directory = stateDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Glowline", isDirectory: true)
         stateURL = directory.appendingPathComponent("settings.json")
         statusURL = directory.appendingPathComponent("engine-status.json")
         tuningURL = directory.appendingPathComponent("engine-status.json.tuning.json")
@@ -57,8 +60,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             if let data = try? Data(contentsOf: stateURL) {
                 do {
-                    let saved = try JSONDecoder().decode(SavedState.self, from: data)
-                    guard saved.schemaVersion == 1 else { throw CocoaError(.coderReadCorrupt) }
+                    let saved = try SavedState.decode(data)
                     var restored = saved.settings; restored.validate(); settings = restored
                     profiles = saved.profiles.map { value in var p = value; p.settings.validate(); return p }
                 } catch {
@@ -69,14 +71,18 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
             }
         } catch { notice = tr("settings.error") + " " + error.localizedDescription }
         lastLoginPreference = settings.launchAtLogin
-        permission = CGPreflightScreenCaptureAccess(); hadPermission = permission
-        refreshDevices(); initialized = true
+        if inspectSystem {
+            permission = CGPreflightScreenCaptureAccess(); hadPermission = permission
+            refreshDevices()
+        }
+        initialized = true
     }
     var isConnected: Bool { guard let s = status else { return false }; return s.serialVerified == 1 && Date().timeIntervalSince1970 - s.timestamp < 3 && s.pid == process?.processIdentifier }
     var isStarting: Bool { process?.isRunning == true && !isConnected && Date().timeIntervalSince(launchedAt) < 8 }
     var modeName: String { tr("mode.\(settings.mode)") }
     var connectionTitle: String {
         if isConnected {
+            if settings.mode == 0 && status?.captureFailed == 1 { return tr("status.captureFailed") }
             if settings.mode == 0 && status?.captureReady == 0 { return tr("status.captureStarting") }
             return settings.enabled ? tr("status.connected") : tr("status.off")
         }
@@ -147,13 +153,20 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         if permission && !hadPermission { hadPermission = true; restartEngine() }
         hadPermission = permission
         if let data = try? Data(contentsOf: statusURL), let next = try? JSONDecoder().decode(EngineStatus.self, from: data), next.pid == process?.processIdentifier { status = next }
-        if process?.isRunning == true, let s = status, Date().timeIntervalSince1970 - s.timestamp > 8, Date().timeIntervalSince(launchedAt) > 10 {
-            message = tr("device.unresponsive"); return
+        let now = Date().timeIntervalSince1970
+        let running = process?.isRunning == true
+        let stale = running && Date().timeIntervalSince(launchedAt) > 10 && (status == nil || now - (status?.timestamp ?? 0) > 8)
+        let captureFailed = running && settings.mode == 0 && (status?.captureFailed == 1 || (status?.captureReady == 0 && Date().timeIntervalSince(launchedAt) > 10))
+        if captureFailed { message = tr("device.captureFailed") }
+        else if stale { message = tr("device.unresponsive") }
+        let allowed = running && !restarting && settings.reconnect && settings.enabled && (settings.mode != 0 || permission)
+        if recovery.shouldRestart(now: now, unhealthy: stale || captureFailed, allowed: allowed) {
+            restartEngine(resetRecovery: false)
         }
         if process?.isRunning != true && settings.reconnect && Date().timeIntervalSince(lastAttempt) > 5 { startEngine() }
     }
     func startEngine() {
-        guard !quitting, process?.isRunning != true else { return }
+        guard !quitting, !restarting, process?.isRunning != true else { return }
         if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased().contains("skydimo") == true }) {
             message = tr("device.skydimo"); lastAttempt = Date(); return
         }
@@ -167,6 +180,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
             p.environment = env
             if (try? logURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 > 2_000_000 { try? FileManager.default.removeItem(at: logURL) }
             if !FileManager.default.fileExists(atPath: logURL.path) { FileManager.default.createFile(atPath: logURL.path, contents: nil, attributes: [.posixPermissions: 0o600]) }
+            try? logHandle?.close()
             logHandle = try FileHandle(forWritingTo: logURL); try logHandle?.seekToEnd(); p.standardOutput = logHandle; p.standardError = logHandle
             p.terminationHandler = { [weak self] finished in Task { @MainActor in
                 guard let self, self.process === finished else { return }
@@ -177,13 +191,16 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
             process = p; try p.run(); message = ""
         } catch { message = error.localizedDescription; lastAttempt = Date() }
     }
-    func restartEngine() {
-        guard !quitting else { return }
+    func restartEngine(resetRecovery: Bool = true) {
+        guard !quitting, !restarting else { return }
+        if resetRecovery { recovery = RecoveryPolicy() }
         if let p = process, p.isRunning {
+            restarting = true
             p.terminationHandler = nil; p.terminate()
             Task { @MainActor [weak self] in
                 for _ in 0..<30 { if !p.isRunning { break }; try? await Task.sleep(nanoseconds: 100_000_000) }
                 guard let self else { return }
+                self.restarting = false
                 if p.isRunning { self.message = tr("device.unresponsive"); return }
                 self.process = nil; self.status = nil; self.startEngine()
             }
@@ -208,9 +225,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         if panel.runModal() == .OK, let url = panel.url {
             do {
                 let data = try Data(contentsOf: url)
-                guard data.count < 1_000_000 else { throw CocoaError(.fileReadTooLarge) }
-                let saved = try JSONDecoder().decode(SavedState.self, from: data)
-                guard saved.schemaVersion == 1 else { throw CocoaError(.coderReadCorrupt) }
+                let saved = try SavedState.decode(data)
                 var safe = saved.settings; safe.validate(); settings = safe
                 profiles = saved.profiles.map { var p = $0; p.settings.validate(); return p }; applySettings(); notice = tr("profile.imported")
             } catch { notice = tr("profile.invalid") + " " + error.localizedDescription }

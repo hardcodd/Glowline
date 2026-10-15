@@ -76,7 +76,7 @@ import ServiceManagement
 @main struct GlowlineMain {
     @MainActor static func main() {
         if CommandLine.arguments.contains("--self-test") {
-            do { try runSettingsTests(); try runStatusTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
+            do { try runSettingsTests(); try runStatusTests(); runRecoveryTests(); try runModelTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
         }
         if CommandLine.arguments.contains("--disable-login") {
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: "local.alex.Glowline").filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }

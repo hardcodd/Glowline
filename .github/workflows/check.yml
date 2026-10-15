@@ -1,0 +1,38 @@
+name: Build and contracts
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Bootstrap the existing RTK build tool
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { execFileSync } = require('node:child_process');
+            execFileSync('brew', ['install', 'rtk'], { stdio: 'inherit', env: { ...process.env, HOMEBREW_NO_AUTO_UPDATE: '1' } });
+      - name: Build and run offline contracts
+        run: rtk proxy python3 build.py
+      - name: Verify local ZIP
+        run: rtk proxy python3 package.py --skip-dmg
+      - name: Compile controller sanitizer checks
+        run: rtk proxy xcrun clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Werror -I Source/Engine Tests/test_controller.c -o build/test-controller-sanitized
+      - name: Run controller sanitizer checks
+        run: rtk proxy ./build/test-controller-sanitized
+      - name: Compile color sanitizer checks
+        run: rtk proxy xcrun clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Werror -Wno-unused-function -I Source/Engine Tests/test_controls.c -o build/test-controls-sanitized
+      - name: Run color sanitizer checks
+        run: rtk proxy ./build/test-controls-sanitized

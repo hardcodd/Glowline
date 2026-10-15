@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Build and locally sign the native Apple Silicon application with the installed SDK."""
 from pathlib import Path
-import subprocess, shutil, plistlib
+import subprocess, shutil, plistlib, json, argparse
 from typing import Union
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--sign-identity", default="-", help="Developer ID identity, or '-' for a local ad-hoc build")
+args = parser.parse_args()
 root = Path(__file__).resolve().parent
+version = json.loads((root / "VERSION.json").read_text())
+if not isinstance(version["build"], int) or version["build"] < 1:
+    raise SystemExit("VERSION.json build must be a positive integer")
 work = root / "build"
 work.mkdir(parents=True, exist_ok=True)
 source = root / "Source"
@@ -19,8 +25,8 @@ def run(*args: Union[str, Path, int]) -> None:
     if " " in command[0]:
         command = ["python3", "-c", "import subprocess,sys; subprocess.run(sys.argv[1:],check=True)", *command]
     subprocess.run(["rtk", "proxy", *command], check=True)
-run("xcrun", "clang", "-fobjc-arc", "-O3", "-Wall", "-Werror", "-Wno-unused-function", "-mmacosx-version-min=15.0", "-framework", "Foundation", "-framework", "ScreenCaptureKit", "-framework", "CoreGraphics", "-framework", "CoreMedia", "-framework", "CoreVideo", source/"Engine/main.m", "-o", macos/"GlowlineEngine")
-run("xcrun", "swiftc", "-swift-version", "5", "-O", "-module-cache-path", work/"ModuleCache", "-target", "arm64-apple-macos15.0", "-framework", "AppKit", "-framework", "SwiftUI", "-framework", "ServiceManagement", "-framework", "CoreGraphics", *[source/name for name in ["Settings.swift", "Model.swift", "Interface.swift", "App.swift"]], "-o", macos/"Glowline")
+run("xcrun", "clang", "-fobjc-arc", "-O3", "-Wall", "-Werror", "-Wno-unused-function", "-mmacosx-version-min=15.0", "-framework", "Foundation", "-framework", "ScreenCaptureKit", "-framework", "CoreGraphics", "-framework", "CoreMedia", "-framework", "CoreVideo", "-arch", "arm64", source/"Engine/main.m", "-o", macos/"GlowlineEngine")
+run("xcrun", "swiftc", "-swift-version", "5", "-O", "-module-cache-path", work/"ModuleCache", "-target", "arm64-apple-macos15.0", "-framework", "AppKit", "-framework", "SwiftUI", "-framework", "ServiceManagement", "-framework", "CoreGraphics", *[source/name for name in ["Settings.swift", "Model.swift", "Interface.swift", "Recovery.swift", "App.swift"]], root/"Tests/test_recovery.swift", root/"Tests/test_model.swift", "-o", macos/"Glowline")
 shutil.copytree(root/"Resources", resources, dirs_exist_ok=True)
 if not (resources/"AppIcon.icns").exists():
     run("xcrun", "swiftc", "-module-cache-path", work/"ModuleCache", source/"Icon.swift", "-o", work/"make-icon")
@@ -31,14 +37,19 @@ if not (resources/"AppIcon.icns").exists():
         for factor, suffix in [(1, ""), (2, "@2x")]:
             run("sips", "-z", size*factor, size*factor, work/"icon.png", "--out", iconset/f"icon_{size}x{size}{suffix}.png")
     run("iconutil", "-c", "icns", iconset, "-o", resources/"AppIcon.icns")
-info = {"CFBundleIdentifier":"local.alex.Glowline", "CFBundleName":"Glowline", "CFBundleDisplayName":"Glowline", "CFBundleExecutable":"Glowline", "CFBundlePackageType":"APPL", "CFBundleShortVersionString":"1.0.0", "CFBundleVersion":"1", "CFBundleDevelopmentRegion":"ru", "CFBundleLocalizations":["ru"], "CFBundleIconFile":"AppIcon", "LSMinimumSystemVersion":"15.0", "LSUIElement":True, "NSHighResolutionCapable":True, "LSApplicationCategoryType":"public.app-category.utilities", "NSPrincipalClass":"NSApplication"}
+info = {"CFBundleIdentifier":"local.alex.Glowline", "CFBundleName":"Glowline", "CFBundleDisplayName":"Glowline", "CFBundleExecutable":"Glowline", "CFBundlePackageType":"APPL", "CFBundleShortVersionString":version["version"], "CFBundleVersion":str(version["build"]), "CFBundleDevelopmentRegion":"ru", "CFBundleLocalizations":["ru"], "CFBundleIconFile":"AppIcon", "LSMinimumSystemVersion":"15.0", "LSUIElement":True, "NSHighResolutionCapable":True, "LSApplicationCategoryType":"public.app-category.utilities", "NSPrincipalClass":"NSApplication"}
 (contents/"Info.plist").write_bytes(plistlib.dumps(info))
 run("xcrun", "clang", "-O2", "-Wall", "-Werror", "-Wno-unused-function", "-I", source/"Engine", root/"Tests/test_controls.c", "-o", work/"test-controls")
 run(work/"test-controls")
 run("xcrun", "clang", "-O2", "-Wall", "-Werror", "-I", source/"Engine", root/"Tests/test_controller.c", "-o", work/"test-controller")
 run(work/"test-controller")
-run("codesign", "--force", "--sign", "-", "--identifier", "local.alex.Glowline.engine", macos/"GlowlineEngine")
-run("codesign", "--force", "--sign", "-", "--identifier", "local.alex.Glowline", app)
+run("xcrun", "clang", "-fobjc-arc", "-O2", "-Wall", "-Werror", "-Wno-unused-function", "-mmacosx-version-min=15.0", "-I", source/"Engine", "-framework", "Foundation", "-framework", "ScreenCaptureKit", "-framework", "CoreGraphics", "-framework", "CoreMedia", "-framework", "CoreVideo", root/"Tests/test_capture.m", "-o", work/"test-capture")
+run(work/"test-capture")
+signing = ["codesign", "--force", "--sign", args.sign_identity]
+if args.sign_identity != "-":
+    signing += ["--options", "runtime", "--timestamp"]
+run(*signing, "--identifier", "local.alex.Glowline.engine", macos/"GlowlineEngine")
+run(*signing, "--identifier", "local.alex.Glowline", app)
 run("codesign", "--verify", "--deep", "--strict", app)
 run(macos/"Glowline", "--self-test")
 print(f"Built: {app}")

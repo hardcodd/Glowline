@@ -84,6 +84,10 @@ int main(void) {
     for (size_t split = 0; split < 16; split++) {
         check_query(terminated, 16, split, true);
     }
+    check_query(terminated, 17, 14, false);
+    terminated[15] = 'X';
+    check_query(terminated, 16, 14, false);
+    terminated[15] = '\n';
     check_query(terminated, 15, 7, false);
     terminated[15] = 'X';
     check_query(terminated, 16, 15, false);

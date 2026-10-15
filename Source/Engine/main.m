@@ -65,7 +65,7 @@ int main(int argc,const char *argv[]){@autoreleasepool{
  dispatch_group_t group=dispatch_group_create();
  dispatch_group_async(group,outputQueue,^{@autoreleasepool{
   pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE,0);
-  uint8_t packet[342]={0x41,0x64,0x61,0x00,0x00,0x70};SkydimoRgb grid[731];
+  uint8_t packet[342]={0x41,0x64,0x61,0x00,0x00,0x70};GlowlineRGB grid[731];
   double started=monotonic_seconds(),windowStart=started,writeTotal=0;unsigned long total=0,windowFrames=0,windowSamples=0,windowDuplicates=0,windowFresh=0;
   double sampleTotal=0,duplicateWaitTotal=0,pacingWaitTotal=0;
   double targetFps=33.68,nextDeadline=started,drainMaxMs=0,tuningRead=0;
@@ -109,8 +109,8 @@ int main(int argc,const char *argv[]){@autoreleasepool{
       if([tuning[gainKey] isKindOfClass:[NSNumber class]])controls.sideGain[j]=bounded([tuning[gainKey] doubleValue],0,2,1);
      }
      NSArray *primary=tuning[@"primary"],*secondary=tuning[@"secondary"];
-     if([primary isKindOfClass:[NSArray class]]&&primary.count==3&&[primary[0] isKindOfClass:[NSNumber class]]&&[primary[1] isKindOfClass:[NSNumber class]]&&[primary[2] isKindOfClass:[NSNumber class]])controls.primary=(SkydimoRgb){bounded([primary[0] doubleValue],0,255,0),bounded([primary[1] doubleValue],0,255,0),bounded([primary[2] doubleValue],0,255,0)};
-     if([secondary isKindOfClass:[NSArray class]]&&secondary.count==3&&[secondary[0] isKindOfClass:[NSNumber class]]&&[secondary[1] isKindOfClass:[NSNumber class]]&&[secondary[2] isKindOfClass:[NSNumber class]])controls.secondary=(SkydimoRgb){bounded([secondary[0] doubleValue],0,255,0),bounded([secondary[1] doubleValue],0,255,0),bounded([secondary[2] doubleValue],0,255,0)};
+     if([primary isKindOfClass:[NSArray class]]&&primary.count==3&&[primary[0] isKindOfClass:[NSNumber class]]&&[primary[1] isKindOfClass:[NSNumber class]]&&[primary[2] isKindOfClass:[NSNumber class]])controls.primary=(GlowlineRGB){bounded([primary[0] doubleValue],0,255,0),bounded([primary[1] doubleValue],0,255,0),bounded([primary[2] doubleValue],0,255,0)};
+     if([secondary isKindOfClass:[NSArray class]]&&secondary.count==3&&[secondary[0] isKindOfClass:[NSNumber class]]&&[secondary[1] isKindOfClass:[NSNumber class]]&&[secondary[2] isKindOfClass:[NSNumber class]])controls.secondary=(GlowlineRGB){bounded([secondary[0] doubleValue],0,255,0),bounded([secondary[1] doubleValue],0,255,0),bounded([secondary[2] doubleValue],0,255,0)};
      if([tuning[@"fps"] isKindOfClass:[NSNumber class]])targetFps=valid_target_fps([tuning[@"fps"] doubleValue]);
      if([tuning[@"drainEach"] isKindOfClass:[NSNumber class]])drainEach=[tuning[@"drainEach"] boolValue];
      if([tuning[@"drainEvery"] isKindOfClass:[NSNumber class]])drainEvery=MAX(1,MIN(120,[tuning[@"drainEvery"] unsignedIntValue]));
@@ -129,21 +129,21 @@ int main(int argc,const char *argv[]){@autoreleasepool{
     if(queueSupported&&queued>(int)queueLimit){double begin=monotonic_seconds();if(tcdrain(fd)<0){stopping=1;break;}drainMaxMs=fmax(drainMaxMs,(monotonic_seconds()-begin)*1000);drains++;}
    }
    CaptureTiming timing={0};uint64_t sampleStart=mach_absolute_time();
-   if(controls.mode==0&&capture.ready)[capture render:grid count:731 timing:&timing];else memset(grid,0,sizeof(grid));
+   if(controls.mode==0&&capture.ready&&!capture.failed)[capture render:grid count:731 timing:&timing];else memset(grid,0,sizeof(grid));
    uint64_t sampleEnd=mach_absolute_time();windowSamples++;sampleTotal+=mach_elapsed_ms(sampleStart,sampleEnd,timebase.numer,timebase.denom);
    BOOL fresh=timing.displayed&&timing.displayed!=previousSource;
    previousSource=timing.displayed;if(fresh)windowFresh++;
    double filterNow=monotonic_seconds();
    for(size_t i=0;i<112;i++){
-    SkydimoRgb raw=controls.mode==0?grid[mapped_grid_index(i,&controls)]:mode_color(i,filterNow-started,&controls);
-    SkydimoRgb target=adjust_color(raw,&controls);double gain=controls.sideGain[led_side(i)];
-    target=(SkydimoRgb){lround(fmin(255,target.r*gain)),lround(fmin(255,target.g*gain)),lround(fmin(255,target.b*gain))};
-    if(!led_enabled(i,&controls)){memset(&releaseStates[i],0,sizeof(ReleaseState));target=(SkydimoRgb){0};}
+    GlowlineRGB raw=controls.mode==0?grid[mapped_grid_index(i,&controls)]:mode_color(i,filterNow-started,&controls);
+    GlowlineRGB target=adjust_color(raw,&controls);double gain=controls.sideGain[led_side(i)];
+    target=(GlowlineRGB){lround(fmin(255,target.r*gain)),lround(fmin(255,target.g*gain)),lround(fmin(255,target.b*gain))};
+    if(!led_enabled(i,&controls)||(controls.mode==0&&capture.failed)){memset(&releaseStates[i],0,sizeof(ReleaseState));target=(GlowlineRGB){0};}
     if(attackSeconds>0&&releaseStates[i].initialized){
      double peak=fmax(target.r,fmax(target.g,target.b)),old=releaseStates[i].level;
-     if(peak>old){double level=old+(peak-old)*(1-exp(-fmax(0,filterNow-releaseStates[i].time)/attackSeconds));double scale=level/peak;target=(SkydimoRgb){lround(target.r*scale),lround(target.g*scale),lround(target.b*scale)};}
+     if(peak>old){double level=old+(peak-old)*(1-exp(-fmax(0,filterNow-releaseStates[i].time)/attackSeconds));double scale=level/peak;target=(GlowlineRGB){lround(target.r*scale),lround(target.g*scale),lround(target.b*scale)};}
     }
-    SkydimoRgb c=release_rgb(&releaseStates[i],target,filterNow,releaseSeconds);
+    GlowlineRGB c=release_rgb(&releaseStates[i],target,filterNow,releaseSeconds);
     packet[6+i*3]=c.r;packet[7+i*3]=c.g;packet[8+i*3]=c.b;
    }
    if(!captureOnly&&skipUnchanged&&!frame_needs_send_with_keepalive(havePrevious,previousPacket,packet,sizeof(packet),monotonic_seconds()-lastSentAt,keepaliveSeconds)){
@@ -172,7 +172,7 @@ int main(int argc,const char *argv[]){@autoreleasepool{
    double now=monotonic_seconds();if(now-windowStart>=1){
     NSMutableArray *colors=[NSMutableArray arrayWithCapacity:112];
     for(size_t i=0;i<112;i++)[colors addObject:@[@(packet[6+i*3]),@(packet[7+i*3]),@(packet[8+i*3])]];
-    NSDictionary *state=@{@"edgeDepth":@(edgeDepth),@"warmth":@(warmth),@"releaseSeconds":@(releaseSeconds),@"keepaliveSeconds":@(keepaliveSeconds),@"captureReceived":@(capture.receivedFrames),@"captureFuture":@(capture.futureFrames),@"captureAccepted":@(capture.acceptedFrames),@"sampleCalls":@(windowSamples),@"freshSamples":@(windowFresh),@"duplicateSkips":@(windowDuplicates),@"duplicateWaitMs":@(duplicateWaitTotal*1000),@"pacingWaitMs":@(pacingWaitTotal*1000),@"samplingTotalMs":@(sampleTotal),@"windowSeconds":@(now-windowStart),@"effect":captureOnly?@"srgb_capture_verification":@"srgb_capture_standalone",@"captureColorSpace":@"extended-linear-sRGB",@"captureDynamicRange":@"canonicalHDR",@"pid":@(getpid()),@"serialVerified":@(!captureOnly),@"fps":captureOnly?@0:@(windowFrames/(now-windowStart)),@"averageFps":captureOnly?@0:@(total/(now-started)),@"brightness":@(controls.brightness*100),@"mirrored":@(controls.mirrored),@"mode":@(controls.mode),@"enabled":@(controls.enabled),@"captureReady":@(capture.ready&&!capture.failed),@"displayID":@(capture.displayID),@"framesRendered":@(total),@"framesSent":captureOnly?@0:@(total),@"targetFps":@(targetFps),@"captureFps":@(captureRate),@"skipUnchanged":@(skipUnchanged),@"drainEvery":@(drainEvery),@"queueSupported":@(queueSupported),@"maxQueuedBytes":@(maxQueued),@"drainMaxMs":@(drainMaxMs),@"drains":@(drains),@"drainEach":@(drainEach),@"queueLimit":@(queueLimit),@"baud":@115200,@"writeMs":@(writeTotal/windowFrames*1000),@"timestamp":@([[NSDate date]timeIntervalSince1970]),@"colors":colors};
+    NSDictionary *state=@{@"edgeDepth":@(edgeDepth),@"warmth":@(warmth),@"releaseSeconds":@(releaseSeconds),@"keepaliveSeconds":@(keepaliveSeconds),@"captureReceived":@(capture.receivedFrames),@"captureFuture":@(capture.futureFrames),@"captureAccepted":@(capture.acceptedFrames),@"sampleCalls":@(windowSamples),@"freshSamples":@(windowFresh),@"duplicateSkips":@(windowDuplicates),@"duplicateWaitMs":@(duplicateWaitTotal*1000),@"pacingWaitMs":@(pacingWaitTotal*1000),@"samplingTotalMs":@(sampleTotal),@"windowSeconds":@(now-windowStart),@"effect":captureOnly?@"srgb_capture_verification":@"srgb_capture_standalone",@"captureColorSpace":@"extended-linear-sRGB",@"captureDynamicRange":@"canonicalHDR",@"pid":@(getpid()),@"serialVerified":@(!captureOnly),@"fps":captureOnly?@0:@(windowFrames/(now-windowStart)),@"averageFps":captureOnly?@0:@(total/(now-started)),@"brightness":@(controls.brightness*100),@"mirrored":@(controls.mirrored),@"mode":@(controls.mode),@"enabled":@(controls.enabled),@"captureReady":@(capture.ready&&!capture.failed),@"captureFailed":@(capture.failed),@"captureError":capture.errorMessage?:@"",@"displayID":@(capture.displayID),@"framesRendered":@(total),@"framesSent":captureOnly?@0:@(total),@"targetFps":@(targetFps),@"captureFps":@(captureRate),@"skipUnchanged":@(skipUnchanged),@"drainEvery":@(drainEvery),@"queueSupported":@(queueSupported),@"maxQueuedBytes":@(maxQueued),@"drainMaxMs":@(drainMaxMs),@"drains":@(drains),@"drainEach":@(drainEach),@"queueLimit":@(queueLimit),@"baud":@115200,@"writeMs":@(writeTotal/windowFrames*1000),@"timestamp":@([[NSDate date]timeIntervalSince1970]),@"colors":colors};
     NSData *data=[NSJSONSerialization dataWithJSONObject:state options:0 error:nil];[data writeToFile:statusPath options:NSDataWritingAtomic error:nil];windowFrames=0;windowSamples=0;windowFresh=0;windowDuplicates=0;sampleTotal=0;duplicateWaitTotal=0;pacingWaitTotal=0;windowStart=now;writeTotal=0;maxQueued=0;drainMaxMs=0;drains=0;
    }
   }}

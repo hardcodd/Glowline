@@ -1,102 +1,130 @@
-# Glowline — macOS Ambient Lighting for Skydimo
+# Glowline — macOS Ambient Lighting for Skydimo SK0L34
 
-Glowline is a native macOS menu-bar app for screen-synced monitor backlighting with a Skydimo SK0L34 112-LED strip. It combines ScreenCaptureKit screen capture, adjustable warm bias lighting, six lighting modes and local profiles in a SwiftUI settings window.
+Glowline is a native macOS menu-bar app that syncs a **Skydimo SK0L34 USB monitor backlight with 112 LEDs** to the edges of your screen. It provides six lighting modes, adjustable warm bias lighting, per-side color correction and local profiles in a SwiftUI interface.
 
-**Status:** in development; source build only. No GitHub release is available yet. Compatible SK0L34 controllers can use their own serial identity; support remains limited to the fixed 112-LED layout and protocol described below.
+[Download for Apple Silicon](https://github.com/hardcodd/Glowline/releases/latest) · [Русское руководство](РУКОВОДСТВО.md) · [Installation and updates](docs/INSTALL.md) · [Report an issue](https://github.com/hardcodd/Glowline/issues)
 
-[Русское руководство](РУКОВОДСТВО.md)
+![Glowline macOS app showing screen-synced Skydimo SK0L34 112-LED ambient lighting, brightness and warmth controls](docs/images/glowline-macos-ambient-lighting.png)
 
-[Features](#features) · [Compatibility](#compatibility) · [Build and limitations](#build-and-limitations) · [Troubleshooting](#troubleshooting)
+*Actual running application; Russian interface. The monitor outline previews transmitted colors, not measured light output. Minor wording differs in version 1.0.0.*
 
-## Features
+**Version 1.0.0, build 2:** Apple Silicon, macOS 15+. The download is ad-hoc signed, without a paid Developer ID certificate or Apple notarization. First launch may require a manual exception in macOS settings; see below.
 
-- Screen-synced ambient lighting with adjustable edge capture and per-side controls.
-- Screen, solid color, gradient, breathing, rainbow and candle modes.
-- Brightness, warmth, RGB color correction and separate fade-in/fade-out controls.
-- Native menu-bar access, optional login launch and hidden startup.
-- Named profiles with local persistence and JSON import/export.
-- Local screen processing without saved or uploaded screen images.
+[Compatible LED strip](#compatible-led-strip) · [Install and first launch](#install-and-first-launch) · [Lighting modes](#lighting-modes) · [Settings](#settings) · [Troubleshooting](#troubleshooting) · [Build from source](#build-from-source)
 
-## Compatibility
+## Compatible LED strip
 
-| Requirement | Current support |
+**Use a Skydimo SK0L34 controller with the fixed 112-LED monitor-strip layout.** A Skydimo product name, connector type or matching LED count alone does not establish compatibility.
+
+| Requirement | Supported configuration |
 | --- | --- |
-| Operating system | macOS 15 or later |
-| Architecture | Apple Silicon (arm64) |
-| Controller | Skydimo SK0L34, fixed 112-LED layout |
-| Device verification | Complete `Moni-A` response: `SK0L34,` plus seven device-specific bytes, optionally followed by CR LF; no serial-number lock |
-| Serial transport | 115200 baud; USB serial port selected in settings |
-| Screen mode | macOS Screen Recording permission |
-| Interface language | Russian |
-| Build tools | Apple Command Line Tools, Python 3 and RTK |
+| Computer | Apple Silicon Mac; Intel Macs are not supported |
+| Operating system | macOS 15 or later; see verification limits below |
+| LED controller and strip | Skydimo SK0L34, 112 LEDs, the existing fixed perimeter layout |
+| USB protocol | Serial connection at 115200 baud; 342-byte RGB frames |
+| Identity response | `Moni-A` query returns `SK0L34,` plus seven device-specific bytes, optionally followed by CR LF |
+| Screen synchronization | Screen Recording permission in macOS |
+| Interface | Russian |
 
-Select your controller's USB serial port under **Приложение** on first launch. New installations have no preselected port; existing saved port settings are retained. The engine checks the model/protocol response before sending lighting frames and accepts different serial suffixes. The handshake does not report LED count: your strip must have the same 112-LED layout and use the existing 342-byte frame format at 115200 baud. Other strip lengths, generic RGB controllers, Intel Macs and other operating systems are not supported by this build.
+There is **no lock to the author's serial number**. Compatible controllers may have different device-specific bytes. Glowline verifies the model response before sending colors, but the handshake does not report LED count or physical arrangement. You must check that your strip matches the 112-LED layout. Other lengths/models, generic RGB strips, Bluetooth/Wi-Fi controllers and Windows/Linux are not supported. Glowline does not flash firmware.
 
-## Open and use
+One physical SK0L34 setup has been tested. A second physical controller has not; protocol tests with different identities are not a hardware compatibility guarantee.
 
-After building, place `Glowline.app` in `~/Applications/`. Open **Open-Glowline.command**, or launch Glowline from Applications. The command launcher expects RTK at `/opt/homebrew/bin/rtk`. Closing the window leaves the menu-bar controller running. Quit through the Glowline menu or Command-Q.
+## Install and first launch
 
-Screen mode requires macOS Screen Recording permission for Glowline. If macOS requests a restart, quit and reopen the app. If a rebuild leaves the switch enabled but the app still reports no access, remove only Glowline from the Screen Recording list and add the installed copy again: toggling can retain a stale signature requirement. Other modes do not require screen access. All processing is local; screen images are not saved or uploaded.
+No Python, RTK, Xcode or paid Apple developer account is needed to run the packaged app.
 
-Login launch and hidden login launch are enabled by default. Check the actual registration status under **Приложение**. Login launch occurs after the user signs in, not before authentication. The **Приложение** page links to macOS Login Items when approval is required.
+1. Download the **arm64 ZIP or DMG** and `SHA256SUMS` from [GitHub Releases](https://github.com/hardcodd/Glowline/releases/latest). Choose either archive format; the application is the same.
+2. Extract the ZIP or open the DMG. Copy `Glowline.app` to `~/Applications/` and launch it from that permanent location. Create the folder if needed.
+3. If macOS blocks the app because the developer cannot be verified or Apple cannot check it, dismiss the warning. Open **System Settings → Privacy & Security**, find the Glowline message and click **Open Anyway**, then confirm **Open**. Only do this for the official download you trust. macOS normally remembers this exception for that copy. [Apple's instructions](https://support.apple.com/en-us/102445).
+4. Quit Skydimo and any other app controlling the strip. Under **Приложение**, select your USB serial port. A fresh installation has no preselected port.
+5. For **Экран** mode, grant Glowline **Screen Recording** permission in macOS Privacy & Security. Quit and reopen it if requested. The other five modes work without screen access.
+6. Check login-launch status under **Приложение**. Login launch and hidden startup are enabled by default; macOS may require approval in Login Items.
 
-## Controls and defaults
+Do not disable Gatekeeper globally. A warning that the app is damaged or will harm your computer requires investigation; it is not the ordinary unidentified-developer prompt. A managed Mac may prohibit exceptions. Downloaded-package first launch on a clean Mac has not yet been verified.
 
-- Screen, solid color, gradient, breathing, rainbow and candle modes.
-- Brightness, warmth, saturation, gamma, RGB gains and black threshold.
-- Capture depth, separate fade-in/fade-out, mirror, LED offset and individual side controls.
-- Display, capture frequency, output pacing, unchanged-frame suppression and heartbeat.
-- Named profiles, JSON import/export, local persistence and reset to the accepted defaults.
+Closing the settings window leaves the menu-bar app and lighting running. Reopen settings from the Glowline menu-bar icon; quit through that menu or **Command-Q**. The menu also offers the light switch, lighting modes and saved profiles.
 
-Accepted defaults: brightness 100%, warmth 50%, intentional mirror, weighted capture depth 15%, fade-out time constant 180 ms, immediate fade-in, capture 120 Hz, output pacing limit 33.68 FPS and 100 ms static heartbeat. Warmth can increase to 90%; neutral color is removed from green and blue without changing pure RGB primaries at neutral gain/saturation settings. The warmth scale is not a Kelvin measurement.
+For checksum verification, updates, permission recovery and removal, see the [installation guide](docs/INSTALL.md).
 
-The serial transport remains 115200 baud. The pacing limit is not a promise of actual LED FPS; status shows actual writes. Static scenes intentionally send fewer identical packets. External USB hub power resolved the observed slight flicker in the tested setup.
+## Lighting modes
 
-## Profiles and local data
+| Mode in the app | Behavior |
+| --- | --- |
+| Экран — Screen | Samples screen edges and sends corresponding colors to the strip |
+| Один цвет — Solid | One adjustable color across the strip |
+| Градиент — Gradient | Two colors distributed around the strip |
+| Дыхание — Breathing | Animated brightness changes |
+| Радуга — Rainbow | Moving multicolor effect |
+| Свеча — Candle | Warm animated glow |
 
-Settings, profiles, bounded logs and diagnostics live in `~/Library/Application Support/Glowline/`. Export JSON from **Мои профили** before experimenting. Reset restores the initial warm configuration while preserving the selected USB port. Imported profiles may contain another machine's port; select yours again if needed.
+The master light switch sends black without losing your settings. Effect colors, speed and direction are adjustable where applicable.
 
-Quit Skydimo and any other program controlling the strip before opening Glowline. Competing controllers cannot safely share its serial port.
+## Settings
 
-## Build and limitations
+| Page | Controls |
+| --- | --- |
+| Освещение | Live color-output preview, brightness, warmth and quick mode selection |
+| Цвет и теплота | Brightness, warmth, saturation, gamma, RGB gains and black threshold |
+| Захват экрана | Display, weighted edge depth, fade-in/fade-out, mirror, LED offset, side enable/gain controls, capture rate and output pacing |
+| Режимы и эффекты | Mode, effect colors, speed and direction |
+| Мои профили | Named profiles, JSON import/export and reset to defaults |
+| Приложение | USB port, reconnect, launch at login, hidden startup, off-on-quit, appearance, permissions and log |
 
-Install Apple Command Line Tools, Python 3 and [RTK](https://github.com/rtk-ai/rtk). From the project directory, run:
+Controls apply automatically. Defaults are brightness **100%**, warmth **50%**, mirror enabled, edge depth **15%**, fade-out time constant **180 ms**, immediate fade-in, capture **120 Hz**, output limit **33.68 FPS** and static heartbeat **100 ms**. Warmth can be increased to **90%**; it is an artistic adjustment, not a calibrated Kelvin value.
 
-```sh
-rtk proxy python3 build.py
-```
+Capture rate and LED output rate are separate. The serial link limits throughput; 120 Hz capture does not mean 120 FPS on the strip. Unchanged-frame suppression reduces redundant writes. A prior moving-pattern test on one setup produced approximately 26.6 output FPS; this is not a guaranteed rate or a latency measurement.
 
-The build runs C color/control contracts and Swift settings/profile/status contracts, then creates and locally signs `Glowline.app`. To try the built app:
+After a capture error, old screen colors are cleared and the app reports the failure. With reconnect enabled and light on, recovery is limited to three restarts with backoff; ten healthy seconds reset the budget. If it still fails, check permissions and use **Переподключить**.
 
-```sh
-rtk proxy open ./Glowline.app
-```
+## Profiles, updates and privacy
 
-Source is in `Source/`, retained C tests in `Tests/`; Swift contracts are embedded in the app's self-test path. There are no third-party application dependencies; the build script invokes development tools through RTK. This is an ad-hoc signed local build, not a notarized distribution. Rebuilding can require Screen Recording approval again. It supports compatible SK0L34 controllers with the fixed 112-LED layout; it does not flash firmware or change the display’s color profile.
+Settings, profiles and bounded diagnostic files are stored locally in `~/Library/Application Support/Glowline/`, separately from the app. Screen images and audio are not saved or uploaded. Glowline has no account requirement or cloud service.
+
+Export JSON from **Мои профили** before updating. Quit the app, replace it at the same location and keep the old copy until the update works. Existing settings and profiles are retained; missing older fields receive defaults. Invalid data or unsupported schemas are rejected, and unreadable startup settings are backed up. A signature change may require Screen Recording approval again.
+
+Resetting lighting defaults preserves your selected USB port and named profiles. An imported profile may contain another Mac's port; select yours again. See [update and removal instructions](docs/INSTALL.md).
 
 ## Troubleshooting
 
-| Symptom | What to check |
+| Symptom | Action |
 | --- | --- |
-| Screen mode has no capture access | Grant Screen Recording permission to the app copy you use; restart if requested. See the permission recovery steps above after rebuilding. |
-| Controller unavailable or busy | Quit other lighting controllers, check USB connectivity and select the correct serial port. |
-| Controller response rejected | Check the selected port and protocol compatibility. Incomplete replies and other models are rejected; a different serial number is allowed. |
-| Flicker with a USB hub | Check the hub's external power supply. |
-| App remains active after closing its window | Use the menu-bar Quit action or Command-Q. |
-| Login launch needs approval | Check the app's registration status and macOS Login Items. |
+| macOS blocks first launch | Use the per-app **Open Anyway** steps above; do not turn off system protection |
+| No screen colors | Grant Screen Recording to the installed copy, then reopen; after a signature change, remove only Glowline from the permission list and add the installed copy again if needed |
+| Controller unavailable or busy | Quit other lighting apps, check USB and select the correct port |
+| Identity rejected | Confirm SK0L34 protocol and 112-LED hardware; other models and malformed replies are rejected |
+| Flicker through a USB hub | Check the strip's power and the hub's external power supply |
+| Colors mapped to the wrong side | Check mirror, LED offset and per-side controls; a different physical layout is not automatically detected |
+| App runs after window closes | This is menu-bar behavior; use Quit or Command-Q |
+| Login launch needs approval | Check registration status and macOS Login Items |
 
-## Previously verified on one setup
+Include macOS version, Mac architecture, controller model, LED count and reproduction steps in a [bug report](https://github.com/hardcodd/Glowline/issues). Review logs and exported profiles before posting; they can contain local paths or your USB-port identifier.
 
-Earlier local testing with the connected strip covered all six modes, live brightness, master-off (112 black RGB outputs), named profile restore, native JSON export/import, window close with continued processing, hidden launch and login registration. These results describe one setup and do not establish compatibility with other controllers.
+## Build from source
 
-The compatibility update is covered by simulated handshakes with different binary suffixes, fragmented replies, wrong models and timeout/truncation cases, plus settings validation and existing color/profile checks. A second physical controller has not been tested.
+Requires Apple Silicon, Apple Command Line Tools, Python 3 and [RTK](https://github.com/rtk-ai/rtk). From the checkout:
 
-A 15-second moving-pattern test in Firefox produced 26.45–26.81 output FPS (median 26.60), with no queued old packets. Full-screen tests produced RGB 255/0/0, 0/255/0 and 1/1/255 for the primaries; accepted warm white was 255/210/128. Firefox was returned to its original tab and exited full screen. These are digital output checks, not optical colorimeter measurements. Login registration and hidden launch were checked without rebooting the Mac.
+```sh
+rtk proxy python3 build.py
+rtk proxy open ./Glowline.app
+```
 
-## Source layout
+The builder compiles the SwiftUI/AppKit app and Objective-C ScreenCaptureKit/serial engine, runs C/Swift contracts and verifies its ad-hoc signature. No third-party runtime library is bundled. A source build can require Screen Recording approval again.
 
-- `Source/`: SwiftUI/AppKit app and Objective-C capture/serial engine.
-- `Resources/`: application icon and Russian localization.
-- `Tests/`: retained C color/control contracts.
-- `build.py`: local build, contract checks and ad-hoc signing.
-- `open_app.py`, `Open-Glowline.command`: launcher for the app in `~/Applications/`.
+```sh
+rtk proxy python3 package.py
+```
+
+Packaging creates ZIP, DMG and `SHA256SUMS` under `build/distribution/`, with the app, both installation guides, MIT license and a file-hash manifest. It verifies ZIP extraction, extracted signatures and DMG integrity. `--skip-dmg` makes only ZIP; `--verify-mount` additionally checks mounted image contents when macOS permits it. Packaging never uploads or submits to Apple.
+
+For Developer ID signing and notarization preparation, see [distribution documentation](docs/DISTRIBUTION.md). Version and build are in `VERSION.json`; application code is in `Source/`, resources in `Resources/` and additional tests in `Tests/`.
+
+## Verification limits
+
+Local automated checks cover color/control logic, fragmented and invalid controller replies, settings migration, profiles, capture-failure invalidation and bounded recovery. C contracts have also been run with AddressSanitizer and UndefinedBehaviorSanitizer. The CI workflow runs builds and offline contracts on macOS 15/26; it does not test a real strip or screen-permission dialogs.
+
+Earlier physical testing on one installed setup covered all six modes, brightness, master-off, profiles, screen capture and serial frame progression. The release candidate's new recovery paths have automated coverage. Clean-Mac installation, a second physical controller, sleep/wake and login after reboot remain unverified. DMG integrity passed locally; mounted-image installation was not verified. No optical calibration or measured input-to-light latency is claimed.
+
+## License
+
+Glowline is distributed under the [MIT License](LICENSE). This project is independent of Skydimo and is not an official Skydimo application.

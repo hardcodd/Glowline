@@ -38,7 +38,14 @@ static void check_query(const uint8_t *reply, size_t length, size_t split, bool 
     FakeController controller = {descriptors[1], reply, length, split};
     pthread_t thread;
     assert(pthread_create(&thread, NULL, respond, &controller) == 0);
-    assert(query_compatible_controller(descriptors[0], 60) == expected);
+    /* Use the production deadline: short VM scheduling stalls under sanitizers
+     * must not turn a valid fragmented reply into a fixture timeout. */
+    bool actual = query_compatible_controller(descriptors[0], 600);
+    if (actual != expected) {
+        fprintf(stderr, "Handshake case failed: length=%zu split=%zu expected=%d actual=%d\n",
+                length, split, expected, actual);
+    }
+    assert(actual == expected);
     assert(pthread_join(thread, NULL) == 0);
     /* The handshake must never send a lighting frame, even on rejection. */
     uint8_t extra;

@@ -2,15 +2,20 @@ import AppKit
 import SwiftUI
 import Carbon
 import ServiceManagement
+import Combine
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     private var model: AppModel!
     private var item: NSStatusItem!
     private var window: NSWindow?
     private var observer: NSObjectProtocol?
+    private var appearanceObserver: AnyCancellable?
     func applicationDidFinishLaunching(_ notification: Notification) {
         let firstLaunch = !FileManager.default.fileExists(atPath: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Glowline/settings.json").path)
         model = AppModel()
+        appearanceObserver = model.$settings.map(\.theme).removeDuplicates().sink { theme in
+            AppAppearance.apply(theme)
+        }
         buildMainMenu()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: "Glowline")
@@ -76,7 +81,7 @@ import ServiceManagement
 @main struct GlowlineMain {
     @MainActor static func main() {
         if CommandLine.arguments.contains("--self-test") {
-            do { try runSettingsTests(); try runStatusTests(); runRecoveryTests(); try runModelTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
+            do { try runSettingsTests(); try runStatusTests(); runRecoveryTests(); try runModelTests(); runAppearanceTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
         }
         if CommandLine.arguments.contains("--disable-login") {
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: "local.alex.Glowline").filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }

@@ -9,7 +9,8 @@ func tr(_ key: String) -> String { NSLocalizedString(key, comment: "") }
 struct EngineStatus: Decodable {
     var pid: Int32; var timestamp: Double; var serialVerified: Int; var fps: Double
     var brightness: Double; var mirrored: Int; var warmth: Double; var mode: Int; var enabled: Int
-    var captureFailed: Int?; var captureError: String?
+    var captureFailed: Bool?; var captureError: String?
+    var detailMode: Bool?
     var captureReady: Int; var colors: [[Int]]; var framesSent: Int; var writeMs: Double
     var edgeDepth: Double; var releaseSeconds: Double; var captureFps: Int
     var captureReceived: UInt64; var captureAccepted: UInt64; var targetFps: Double
@@ -18,6 +19,8 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
 
 @MainActor final class AppModel: ObservableObject {
     @Published var settings = Settings() { didSet { if initialized { scheduleSave() } } }
+    @Published private(set) var effectiveBrightness = 1.0
+    @Published private(set) var scheduledPeriod: BrightnessSchedule.Period?
     @Published var profiles: [Profile] = []
     @Published var status: EngineStatus?
     @Published var message = ""
@@ -49,8 +52,12 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
     private var activeDisplay: UInt32 = 0
     private var hadPermission = false
     private var lastLoginPreference = true
+    private var lastTuningBrightness: Double?
+    private let clock: () -> Date
+    private let calendar: () -> Calendar
 
-    init(stateDirectory: URL? = nil, inspectSystem: Bool = true) {
+    init(stateDirectory: URL? = nil, inspectSystem: Bool = true, clock: @escaping () -> Date = Date.init, calendar: @escaping () -> Calendar = { .current }) {
+        self.clock = clock; self.calendar = calendar
         directory = stateDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Glowline", isDirectory: true)
         stateURL = directory.appendingPathComponent("settings.json")
         statusURL = directory.appendingPathComponent("engine-status.json")
@@ -75,6 +82,8 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
             permission = CGPreflightScreenCaptureAccess(); hadPermission = permission
             refreshDevices()
         }
+        effectiveBrightness = settings.effectiveBrightness(at: clock(), calendar: calendar())
+        scheduledPeriod = settings.brightnessSchedule.period(at: clock(), calendar: calendar())
         initialized = true
     }
     var isConnected: Bool { guard let s = status else { return false }; return s.serialVerified == 1 && Date().timeIntervalSince1970 - s.timestamp < 3 && s.pid == process?.processIdentifier }
@@ -82,7 +91,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
     var modeName: String { tr("mode.\(settings.mode)") }
     var connectionTitle: String {
         if isConnected {
-            if settings.mode == 0 && status?.captureFailed == 1 { return tr("status.captureFailed") }
+            if settings.mode == 0 && status?.captureFailed == true { return tr("status.captureFailed") }
             if settings.mode == 0 && status?.captureReady == 0 { return tr("status.captureStarting") }
             return settings.enabled ? tr("status.connected") : tr("status.off")
         }
@@ -111,10 +120,23 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
             var safe = settings; safe.validate()
             if safe != settings { settings = safe }
             try JSONEncoder().encode(SavedState(settings: safe, profiles: profiles)).write(to: stateURL, options: .atomic)
-            try safe.engineData().write(to: tuningURL, options: .atomic)
+            try updateScheduledBrightness(forceTuning: true)
             if settings.launchAtLogin != lastLoginPreference { configureLogin(); lastLoginPreference = settings.launchAtLogin }
             if process?.isRunning == true && (activePort != settings.port || activeDisplay != settings.displayID) { restartEngine() }
         } catch { notice = tr("settings.error") + " " + error.localizedDescription }
+    }
+    /// Also called by the existing timer: refresh after clock changes or waking,
+    /// without saving preferences, restarting the engine or rewriting unchanged tuning.
+    func updateScheduledBrightness(forceTuning: Bool = false) throws {
+        let date = clock(); let localCalendar = calendar()
+        let next = settings.effectiveBrightness(at: date, calendar: localCalendar)
+        let period = settings.brightnessSchedule.period(at: date, calendar: localCalendar)
+        if effectiveBrightness != next { effectiveBrightness = next }
+        if scheduledPeriod != period { scheduledPeriod = period }
+        if forceTuning || lastTuningBrightness != next {
+            try settings.engineData(at: date, calendar: localCalendar).write(to: tuningURL, options: .atomic)
+            lastTuningBrightness = next
+        }
     }
     func configureLogin() {
         do {
@@ -148,6 +170,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         }
     }
     private func tick() {
+        do { try updateScheduledBrightness() } catch { notice = tr("settings.error") + " " + error.localizedDescription }
         permission = CGPreflightScreenCaptureAccess()
         updateLoginStatus()
         if permission && !hadPermission { hadPermission = true; restartEngine() }
@@ -156,7 +179,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         let now = Date().timeIntervalSince1970
         let running = process?.isRunning == true
         let stale = running && Date().timeIntervalSince(launchedAt) > 10 && (status == nil || now - (status?.timestamp ?? 0) > 8)
-        let captureFailed = running && settings.mode == 0 && (status?.captureFailed == 1 || (status?.captureReady == 0 && Date().timeIntervalSince(launchedAt) > 10))
+        let captureFailed = running && settings.mode == 0 && (status?.captureFailed == true || (status?.captureReady == 0 && Date().timeIntervalSince(launchedAt) > 10))
         if captureFailed { message = tr("device.captureFailed") }
         else if stale { message = tr("device.unresponsive") }
         let allowed = running && !restarting && settings.reconnect && settings.enabled && (settings.mode != 0 || permission)
@@ -174,7 +197,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         guard FileManager.default.fileExists(atPath: settings.port) else { message = tr("device.missing"); lastAttempt = Date(); return }
         guard let url = Bundle.main.url(forAuxiliaryExecutable: "GlowlineEngine") else { message = tr("device.engineMissing"); return }
         do {
-            try settings.engineData().write(to: tuningURL, options: .atomic)
+            try updateScheduledBrightness(forceTuning: true)
             let p = Process(); p.executableURL = url; p.arguments = [statusURL.path]
             var env = ProcessInfo.processInfo.environment; env["GLOWLINE_PORT"] = settings.port; env["GLOWLINE_PARENT"] = String(ProcessInfo.processInfo.processIdentifier); env["GLOWLINE_DISPLAY"] = String(settings.displayID)
             p.environment = env
@@ -237,13 +260,13 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         guard !quitting else { return }; quitting = true; timer?.invalidate(); pending?.cancel(); applySettings()
         if let p = process, p.isRunning {
             if settings.offOnQuit {
-                var off = settings; off.enabled = false; try? off.engineData().write(to: tuningURL, options: .atomic)
+                var off = settings; off.enabled = false; try? off.engineData(at: clock(), calendar: calendar()).write(to: tuningURL, options: .atomic)
                 Thread.sleep(forTimeInterval: 0.25)
             }
             p.terminationHandler = nil; p.terminate()
             for _ in 0..<30 { if !p.isRunning { break }; Thread.sleep(forTimeInterval: 0.1) }
         }
-        try? settings.engineData().write(to: tuningURL, options: .atomic)
+        try? settings.engineData(at: clock(), calendar: calendar()).write(to: tuningURL, options: .atomic)
         try? logHandle?.close()
     }
 }
@@ -256,4 +279,17 @@ func runStatusTests() throws {
     let status = try JSONDecoder().decode(EngineStatus.self, from: Data(payload.utf8))
     precondition(status.captureReady == 1 && status.mirrored == 1 && status.enabled == 1 && status.serialVerified == 1)
     precondition(status.colors[0] == [255,210,128] && status.fps == 26.7)
+    // Real engine BOOL properties serialize as JSON Booleans, unlike integer expressions.
+    for failed in [false, true] {
+        var object = try JSONSerialization.jsonObject(with: Data(payload.utf8)) as! [String: Any]
+        object["captureFailed"] = failed
+        object["detailMode"] = !failed
+        object["captureError"] = failed ? "Capture stopped" : ""
+        let actual = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(EngineStatus.self, from: actual)
+        precondition(decoded.captureReady == 1 && decoded.framesSent == 10)
+        precondition(decoded.captureFailed == failed && decoded.captureError == (failed ? "Capture stopped" : ""))
+        precondition(decoded.detailMode == !failed)
+    }
+
 }

@@ -18,6 +18,7 @@
 @property(nonatomic,strong) SCStreamConfiguration *configuration;
 @property(nonatomic,strong) NSCondition *frameCondition;
 @property(atomic) double edgeDepth;
+@property(atomic) BOOL detailMode;
 @property(nonatomic) uint32_t displayID;
 @property(atomic) BOOL ready;
 @property(atomic) uint64_t receivedFrames;
@@ -99,7 +100,7 @@
  os_unfair_lock_lock(&_lock);CVPixelBufferRef pixel=_latest;if(pixel)CVPixelBufferRetain(pixel);if(timing)*timing=_timing;os_unfair_lock_unlock(&_lock);
  if(!pixel){memset(out,0,count*sizeof(*out));return;}
  if(CVPixelBufferLockBaseAddress(pixel,kCVPixelBufferLock_ReadOnly)==kCVReturnSuccess){
-  sample_edge_grid(CVPixelBufferGetBaseAddress(pixel),CVPixelBufferGetWidth(pixel),CVPixelBufferGetHeight(pixel),CVPixelBufferGetBytesPerRow(pixel),self.width,self.height,out,count,self.edgeDepth);
+  sample_edge_grid_mode(CVPixelBufferGetBaseAddress(pixel),CVPixelBufferGetWidth(pixel),CVPixelBufferGetHeight(pixel),CVPixelBufferGetBytesPerRow(pixel),self.width,self.height,out,count,self.edgeDepth,self.detailMode);
   CVPixelBufferUnlockBaseAddress(pixel,kCVPixelBufferLock_ReadOnly);
  }
  CVPixelBufferRelease(pixel);

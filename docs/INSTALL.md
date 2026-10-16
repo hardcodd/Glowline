@@ -4,6 +4,9 @@
 
 Requires Apple Silicon, macOS 15 or later, and a compatible SK0L34 strip with 112 LEDs. The interface is Russian. No Python, RTK or developer tools are needed to run the packaged application.
 
+
+Current settings save automatically after edits and return on launch. Named profiles are separate snapshots: save again to update one. Schedule and Color detail are disabled by default; enable them on their respective pages. Open the included `lighting-test.html` in a browser: `F` for fullscreen, Space to pause, `H` for controls.
+
 ## Install
 
 1. Verify the download against `SHA256SUMS` from the same trusted distribution.
@@ -14,7 +17,7 @@ Requires Apple Silicon, macOS 15 or later, and a compatible SK0L34 strip with 11
 
 ## First launch without an Apple Developer ID certificate
 
-Version 1.0.0 is ad-hoc signed and is not notarized by Apple. If macOS blocks the first launch because it cannot verify the developer or check the app:
+Version 1.1.0 is ad-hoc signed and is not notarized by Apple. If macOS blocks the first launch because it cannot verify the developer or check the app:
 
 1. Try opening the installed Glowline copy once, then dismiss the warning.
 2. Open **System Settings → Privacy & Security**, scroll to the Glowline security message and click **Open Anyway**.
@@ -25,7 +28,7 @@ Use this only for the official GitHub download you trust. [Apple explains the pr
 To check a ZIP download, use the built-in Terminal tool and compare its output with the corresponding line in `SHA256SUMS`:
 
 ```sh
-shasum -a 256 Glowline-1.0.0-build2-arm64.zip
+shasum -a 256 Glowline-1.1.0-build3-arm64.zip
 ```
 
 For DMG, use its filename instead. A matching checksum detects a changed download; it does not replace a Developer ID certificate or notarization.

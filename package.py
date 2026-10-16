@@ -58,7 +58,7 @@ def main() -> None:
         staging = Path(temporary) / "Glowline"
         staging.mkdir()
         run("ditto", app, staging / "Glowline.app")
-        for filename in ("INSTALL.md", "INSTALL.ru.md"):
+        for filename in ("INSTALL.md", "INSTALL.ru.md", "lighting-test.html"):
             (staging / filename).write_bytes((root / "docs" / filename).read_bytes())
         if (root / "LICENSE").exists():
             (staging / "LICENSE").write_bytes((root / "LICENSE").read_bytes())

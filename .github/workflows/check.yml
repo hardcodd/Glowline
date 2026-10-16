@@ -36,3 +36,7 @@ jobs:
         run: rtk proxy xcrun clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Werror -Wno-unused-function -I Source/Engine Tests/test_controls.c -o build/test-controls-sanitized
       - name: Run color sanitizer checks
         run: rtk proxy ./build/test-controls-sanitized
+      - name: Compile sampling sanitizer checks
+        run: rtk proxy xcrun clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Werror -Wno-unused-function -I Source/Engine Tests/test_sampling.c -o build/test-sampling-sanitized
+      - name: Run sampling sanitizer checks
+        run: rtk proxy ./build/test-sampling-sanitized

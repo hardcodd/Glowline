@@ -8,13 +8,34 @@ extension RGB {
         red = Double(c.redComponent); green = Double(c.greenComponent); blue = Double(c.blueComponent)
     }
 }
-private let amber = Color(red: 1, green: 0.69, blue: 0.34)
-private let pages: [(String, String)] = [("overview", "sparkles"), ("color", "slider.horizontal.3"), ("capture", "viewfinder"), ("effects", "circle.lefthalf.filled"), ("profiles", "square.stack.3d.up"), ("app", "gearshape")]
+/// AppKit owns appearance so SwiftUI, window materials and native panels agree.
+@MainActor enum AppAppearance {
+    static func apply(_ theme: String) {
+        switch theme {
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp.appearance = nil
+        }
+    }
+}
+
+/// Keep warm decoration separate from text contrast in the light appearance.
+enum AppPalette {
+    static let amber = NSColor(name: "GlowlineAmber") { appearance in
+        if appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua {
+            return NSColor(srgbRed: 1, green: 0.69, blue: 0.34, alpha: 1)
+        }
+        return NSColor(srgbRed: 1, green: 0.60, blue: 0.12, alpha: 1)
+    }
+}
+private let amber = Color(nsColor: AppPalette.amber)
+private let pages: [(String, String)] = [("overview", "sparkles"), ("color", "slider.horizontal.3"), ("schedule", "clock"), ("capture", "viewfinder"), ("effects", "circle.lefthalf.filled"), ("profiles", "square.stack.3d.up"), ("app", "gearshape")]
 private let modeIcons = ["display", "lightbulb", "rectangle.fill.on.rectangle.fill", "wind", "rainbow", "flame"]
 
 struct RootView: View {
     @ObservedObject var model: AppModel
     @Environment(\.colorScheme) private var scheme
+    private var accentText: Color { scheme == .dark ? amber : .primary }
     private var canvas: Color { scheme == .dark ? Color(red: 0.065, green: 0.071, blue: 0.086) : Color(nsColor: .windowBackgroundColor) }
     var body: some View {
         HStack(spacing: 0) {
@@ -29,6 +50,7 @@ struct RootView: View {
                         if (!model.isConnected && !model.isStarting) || (model.isConnected && model.settings.mode == 0 && model.status?.captureReady == 0) { connectionHelp }
                         switch model.page {
                         case "color": colorPage
+                        case "schedule": schedulePage
                         case "capture": capturePage
                         case "effects": effectsPage
                         case "profiles": profilesPage
@@ -41,7 +63,7 @@ struct RootView: View {
         }
         .frame(minWidth: 980, minHeight: 690)
         .tint(amber)
-        .preferredColorScheme(model.settings.theme == "system" ? nil : model.settings.theme == "light" ? .light : .dark)
+        .modifier(AppearanceButtonLabels())
         .confirmationDialog(tr("reset.confirm"), isPresented: $model.confirmReset, titleVisibility: .visible) {
             Button(tr("settings.reset"), role: .destructive) { model.resetDefaults() }
         }
@@ -57,7 +79,7 @@ struct RootView: View {
                     Label(tr("page." + item.0), systemImage: item.1)
                         .font(.system(size: 13, weight: model.page == item.0 ? .semibold : .medium))
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 12)
-                        .foregroundStyle(model.page == item.0 ? amber : Color.primary.opacity(0.7))
+                        .foregroundStyle(model.page == item.0 ? accentText : Color.primary.opacity(0.7))
                         .background(model.page == item.0 ? amber.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 10))
                 }.buttonStyle(.plain).accessibilityIdentifier("page." + item.0)
             }
@@ -100,13 +122,13 @@ struct RootView: View {
             MonitorPreview(colors: model.isConnected ? model.status?.colors ?? [] : [], enabled: model.settings.enabled)
             HStack(spacing: 12) {
                 stat("stat.mode", value: model.modeName, icon: modeIcons[model.settings.mode])
-                stat("stat.brightness", value: percent(model.settings.brightness), icon: "sun.max")
+                stat("stat.brightness", value: percent(model.settings.enabled ? model.effectiveBrightness : 0), icon: "sun.max")
                 stat("stat.warmth", value: percent(model.settings.warmth), icon: "thermometer.medium")
             }
             card("light.quick", icon: "slider.horizontal.3") {
                 settingSlider("control.brightness", value: $model.settings.brightness, range: 0...1, format: percent)
                 settingSlider("control.warmth", value: $model.settings.warmth, range: 0...0.9, format: percent, help: "help.warmth")
-                HStack { Text(tr("warmth.neutral")).foregroundStyle(.secondary); Spacer(); Text(tr("warmth.accepted")).foregroundStyle(amber); Spacer(); Text(tr("warmth.amber")).foregroundStyle(.secondary) }.font(.caption2)
+                HStack { Text(tr("warmth.neutral")).foregroundStyle(.secondary); Spacer(); Text(tr("warmth.accepted")).foregroundStyle(accentText); Spacer(); Text(tr("warmth.amber")).foregroundStyle(.secondary) }.font(.caption2)
             }
             card("mode.title", icon: "square.grid.2x2") { modeGrid }
         }
@@ -129,14 +151,57 @@ struct RootView: View {
             card("color.dark", icon: "moon") { settingSlider("control.black", value: $model.settings.blackThreshold, range: 0...0.2, format: percent, help: "help.black") }
         }
     }
+    private var schedulePage: some View {
+        VStack(spacing: 20) {
+            card("schedule.title", icon: "clock") {
+                Toggle(tr("schedule.enabled"), isOn: $model.settings.brightnessSchedule.enabled).accessibilityIdentifier("schedule.enabled")
+                Text(tr("schedule.help")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Label(tr("schedule.current"), systemImage: "sun.max")
+                    Spacer()
+                    Text(tr(!model.settings.enabled ? "schedule.off" : model.scheduledPeriod == .day ? "schedule.day" : model.scheduledPeriod == .night ? "schedule.night" : "schedule.manual"))
+                    Text(percent(model.settings.enabled ? model.effectiveBrightness : 0)).monospacedDigit()
+                }.font(.callout).accessibilityIdentifier("schedule.current")
+                if model.settings.brightnessSchedule.enabled && !model.settings.brightnessSchedule.isActive {
+                    Label(tr("schedule.invalid"), systemImage: "exclamationmark.triangle").font(.caption).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            card("schedule.day", icon: "sun.max") {
+                scheduleTime("schedule.dayStart", minutes: $model.settings.brightnessSchedule.dayStart)
+                Text(timeLabel(model.settings.brightnessSchedule.dayStart) + " — " + timeLabel(model.settings.brightnessSchedule.nightStart)).font(.caption).foregroundStyle(.secondary)
+                settingSlider("schedule.dayBrightness", value: $model.settings.brightnessSchedule.dayBrightness, range: 0...1, format: percent)
+            }
+            card("schedule.night", icon: "moon") {
+                scheduleTime("schedule.nightStart", minutes: $model.settings.brightnessSchedule.nightStart)
+                Text(timeLabel(model.settings.brightnessSchedule.nightStart) + " — " + timeLabel(model.settings.brightnessSchedule.dayStart)).font(.caption).foregroundStyle(.secondary)
+                settingSlider("schedule.nightBrightness", value: $model.settings.brightnessSchedule.nightBrightness, range: 0...1, format: percent)
+            }
+            Text(tr("schedule.profiles")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    private func timeLabel(_ minute: Int) -> String { String(format: "%02d:%02d", minute / 60, minute % 60) }
+    private func scheduleTime(_ key: String, minutes: Binding<Int>) -> some View {
+        // A fixed UTC reference encodes only clock fields, avoiding DST gaps in the picker.
+        let zone = TimeZone(secondsFromGMT: 0)!
+        let binding = Binding<Date>(get: { Date(timeIntervalSinceReferenceDate: Double(minutes.wrappedValue * 60)) }, set: { date in
+            var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
+            let parts = calendar.dateComponents([.hour, .minute], from: date)
+            minutes.wrappedValue = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+        })
+        return DatePicker(tr(key), selection: binding, displayedComponents: .hourAndMinute)
+            .environment(\.timeZone, zone).environment(\.locale, Locale(identifier: "ru_RU"))
+            .accessibilityIdentifier(key)
+    }
     private var capturePage: some View {
         VStack(spacing: 20) {
             card("capture.area", icon: "viewfinder") {
                 Picker(tr("capture.display"), selection: $model.settings.displayID) { ForEach(model.displays) { Text($0.name).tag($0.id) } }.pickerStyle(.menu)
+                Toggle(tr("control.detailMode"), isOn: $model.settings.detailMode).accessibilityIdentifier("control.detailMode")
+                Text(tr("help.detailMode")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 settingSlider("control.depth", value: $model.settings.edgeDepth, range: 0...0.35, format: percent, help: "help.depth")
                 DepthPreview(depth: model.settings.edgeDepth)
-                settingSlider("control.release", value: $model.settings.releaseSeconds, range: 0...1, format: milliseconds, help: "help.release")
-                settingSlider("control.attack", value: $model.settings.attackSeconds, range: 0...1, format: milliseconds, help: "help.attack")
+                settingSlider("control.release", value: $model.settings.releaseSeconds, range: 0...1, step: 0.001, format: milliseconds, help: "help.release")
+                settingSlider("control.attack", value: $model.settings.attackSeconds, range: 0...1, step: 0.001, format: milliseconds, help: "help.attack")
             }
             card("capture.layout", icon: "rectangle.3.group") {
                 Toggle(tr("control.mirror"), isOn: $model.settings.mirrored)
@@ -148,10 +213,10 @@ struct RootView: View {
                 sideRow("side.bottom", enabled: $model.settings.bottomEnabled, gain: $model.settings.bottomGain)
             }
             card("capture.performance", icon: "speedometer") {
-                settingSlider("control.fps", value: $model.settings.fps, range: 5...33.68, format: { String(format: "%.1f FPS", $0) }, help: "help.fps")
+                settingSlider("control.fps", value: $model.settings.fps, range: 5...33.68, step: 1, format: { String(format: $0 == 33.68 ? "%.2f FPS" : "%.0f FPS", $0) }, help: "help.fps")
                 Picker(tr("control.captureRate"), selection: $model.settings.captureFps) { ForEach([30,60,90,120,144,240], id: \.self) { Text("\($0) Hz").tag($0) } }
                 Toggle(tr("control.dedup"), isOn: $model.settings.skipUnchanged)
-                settingSlider("control.heartbeat", value: $model.settings.keepaliveSeconds, range: 0.05...1, format: milliseconds)
+                settingSlider("control.heartbeat", value: $model.settings.keepaliveSeconds, range: 0.05...1, step: 0.001, format: milliseconds)
                 Text(tr("help.performance")).font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -171,7 +236,7 @@ struct RootView: View {
                 Text(tr("help.palette")).font(.caption).foregroundStyle(.secondary)
             }
             card("effects.motion", icon: "waveform.path") {
-                settingSlider("control.speed", value: $model.settings.speed, range: 0.1...5, format: { String(format: "%.1f×", $0) })
+                settingSlider("control.speed", value: $model.settings.speed, range: 0.1...5, step: 0.1, format: { String(format: "%.1f×", $0) })
                 Toggle(tr("control.reverse"), isOn: $model.settings.reverse)
                 Text(tr("help.effects")).font(.caption).foregroundStyle(.secondary)
             }.disabled(![3,4,5].contains(model.settings.mode))
@@ -260,15 +325,22 @@ struct RootView: View {
             content()
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading).background(.primary.opacity(scheme == .dark ? 0.035 : 0.025), in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.primary.opacity(0.065)))
     }
-    private func settingSlider(_ key: String, value: Binding<Double>, range: ClosedRange<Double>, format: (Double) -> String, help: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func settingSlider(_ key: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double = 0.01, format: (Double) -> String, help: String? = nil) -> some View {
+        let scale = SliderScale(range: range, step: step)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack { Text(tr(key)).font(.system(size: 12, weight: .medium)); Spacer(); Text(format(value.wrappedValue)).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary).frame(minWidth: 65, alignment: .trailing) }
-            Slider(value: value, in: range).accessibilityLabel(tr(key)).accessibilityIdentifier(key)
+            steppedSlider(value, scale: scale).disabled(key == "control.brightness" && model.settings.brightnessSchedule.isActive).accessibilityLabel(tr(key)).accessibilityValue(format(value.wrappedValue)).accessibilityIdentifier(key)
+            if key == "control.brightness" && model.settings.brightnessSchedule.isActive { Text(tr("schedule.manualHint")).font(.caption).foregroundStyle(.secondary) }
             if let help { Text(tr(help)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
     }
+    private func steppedSlider(_ value: Binding<Double>, scale: SliderScale) -> some View {
+        Slider(value: Binding(get: { scale.index(for: value.wrappedValue) },
+                              set: { value.wrappedValue = scale.value(at: $0) }),
+               in: 0...scale.lastIndex, step: 1)
+    }
     private func sideRow(_ key: String, enabled: Binding<Bool>, gain: Binding<Double>) -> some View {
-        HStack(spacing: 16) { Toggle(tr(key), isOn: enabled).toggleStyle(.switch).frame(width: 155, alignment: .leading); Slider(value: gain, in: 0...2).disabled(!enabled.wrappedValue).accessibilityLabel(tr(key) + " " + tr("control.brightness")); Text(percent(gain.wrappedValue)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 44) }
+        HStack(spacing: 16) { Toggle(tr(key), isOn: enabled).toggleStyle(.switch).frame(width: 155, alignment: .leading); steppedSlider(gain, scale: SliderScale(range: 0...2, step: 0.01)).disabled(!enabled.wrappedValue).accessibilityLabel(tr(key) + " " + tr("control.brightness")); Text(percent(gain.wrappedValue)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 44) }
     }
     private func colorBinding(_ path: WritableKeyPath<Settings, RGB>) -> Binding<Color> { Binding(get: { model.settings[keyPath: path].color }, set: { model.settings[keyPath: path] = RGB(color: $0) }) }
     private func percent(_ value: Double) -> String { String(format: "%.0f%%", value * 100) }
@@ -277,6 +349,16 @@ struct RootView: View {
         HStack(spacing: 10) { Image(systemName: icon).font(.title3).foregroundStyle(amber); VStack(alignment: .leading, spacing: 4) { Text(tr(key)).font(.caption2).foregroundStyle(.secondary); Text(value).font(.system(size: 14, weight: .semibold)) }; Spacer(minLength: 0) }.padding(16).frame(maxWidth: .infinity).background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
     }
     private func swatch(r: Double, g: Double, b: Double) -> some View { RoundedRectangle(cornerRadius: 6).fill(Color(red: r/255, green: g/255, blue: b/255)).frame(width: 42, height: 25).overlay(RoundedRectangle(cornerRadius: 6).stroke(.primary.opacity(0.1))) }
+}
+
+
+/// Use primary text in light mode, including inherited native button labels.
+private struct AppearanceButtonLabels: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    @ViewBuilder func body(content: Content) -> some View {
+        if scheme == .light { content.foregroundStyle(Color.primary) }
+        else { content }
+    }
 }
 
 struct MonitorPreview: View {

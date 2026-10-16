@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Glowline · Тест света</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  body { color: #eee; font: 14px/1.45 system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(700px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid #383838; border-radius: 22px; background: #161616; padding: 25px; box-shadow: 0 18px 70px #000b; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .eyebrow { color: #ffb55c; text-transform: uppercase; letter-spacing: .15em; font-size: 10px; font-weight: 700; }
+  h1 { font-size: 25px; font-weight: 600; letter-spacing: -.04em; margin: 3px 0 0; }
+  #dimensions { font: 12px ui-monospace, monospace; color: #aaa; text-align: right; white-space: nowrap; }
+  .intro { color: #aaa; margin: 12px 0 19px; max-width: 570px; }
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  button, select, input { font: inherit; }
+  button, select { color: #eee; background: #252525; border: 1px solid #414141; border-radius: 9px; padding: 9px 11px; }
+  button { cursor: pointer; }
+  button:hover { background: #333; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #ffb55c; outline-offset: 3px; }
+  .modes button { text-align: left; font-size: 13px; }
+  .modes button[aria-pressed="true"] { color: #ffc580; border-color: #c88c42; background: #34291c; }
+  .modes span { display: block; color: #999; font-size: 11px; margin-top: 2px; }
+  #description { color: #c4c4c4; min-height: 40px; margin: 13px 0; font-size: 12px; }
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 13px 24px; border-top: 1px solid #333; padding-top: 17px; }
+  label { display: block; color: #bbb; font-size: 12px; }
+  .label { display: flex; justify-content: space-between; gap: 8px; }
+  output { color: #eee; font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; accent-color: #ffb55c; height: 20px; margin: 6px 0 0; }
+  input:disabled { opacity: .3; }
+  select { width: 100%; margin-top: 6px; height: 36px; padding: 4px 9px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .primary { background: #ffb55c; border-color: #ffb55c; color: #21180d; font-weight: 650; }
+  .primary:hover { background: #ffc67f; }
+  .help { color: #999; font-size: 11px; margin: 15px 0 0; }
+  kbd { color: #ddd; font: 11px ui-monospace, monospace; }
+  #notice { color: #ffc580; font-size: 12px; margin-top: 10px; }
+  #hint { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #999; background: #151515; border: 1px solid #333; border-radius: 12px; padding: 14px 20px; text-align: center; pointer-events: none; }
+  [hidden] { display: none !important; }
+  body.testing { cursor: none; }
+  @media (max-width: 540px) { #panel { padding: 18px; } .modes { grid-template-columns: repeat(2,1fr); } .controls { gap: 10px 16px; } h1 { font-size: 21px; } }
+</style>
+<canvas id="stage" aria-label="Тестовое изображение подсветки"></canvas>
+<main id="panel">
+  <header><div><div class="eyebrow">Glowline / Light lab</div><h1>Проверка света</h1></div><div id="dimensions"></div></header>
+  <p class="intro">Чистый чёрный фон и свет без формата 16:9. Подходит для широкого монитора. Панель скрывается на время теста.</p>
+  <nav class="modes" aria-label="Тестовые сцены">
+    <button data-mode="orbit" aria-pressed="true">1 · По периметру<span>Один шарик, плавная смена тона</span></button>
+    <button data-mode="spot" aria-pressed="false">2 · Точность<span>Неподвижный белый, без ореола</span></button>
+    <button data-mode="duo" aria-pressed="false">3 · Два цвета<span>Два шарика с разными тонами</span></button>
+    <button data-mode="sweep" aria-pressed="false">4 · Сканирование<span>Узкая полоса через весь экран</span></button>
+    <button data-mode="field" aria-pressed="false">5 · Заливка<span>Ровный цвет на всей площади</span></button>
+    <button data-mode="sides" aria-pressed="false">6 · Стороны<span>Верх красный, справа зелёный</span></button>
+  </nav>
+  <p id="description"></p>
+  <div class="controls">
+    <label><span class="label">Диаметр / ширина <output id="sizeOut"></output></span><input id="size" aria-label="Диаметр" type="range" min="0.5" max="15" step="0.5" value="3"></label>
+    <label><span class="label">Отступ от края <output id="insetOut"></output></span><input id="inset" aria-label="Отступ от края" type="range" min="0" max="30" step="0.5" value="1"></label>
+    <label><span class="label">Один круг <output id="periodOut"></output></span><input id="period" aria-label="Время одного круга" type="range" min="8" max="90" step="1" value="30"></label>
+    <label><span class="label">Ореол <output id="haloOut"></output></span><input id="halo" aria-label="Ореол" type="range" min="0" max="100" step="1" value="0"></label>
+    <label><span class="label">Яркость изображения <output id="levelOut"></output></span><input id="level" aria-label="Яркость изображения" type="range" min="1" max="100" step="1" value="100"></label>
+    <label>Цвет<select id="color" aria-label="Цвет"><option value="cycle">Плавная смена тона</option><option value="white">Белый</option><option value="red">Красный</option><option value="green">Зелёный</option><option value="blue">Синий</option><option value="amber">Янтарный</option><option value="black">Чёрный</option></select></label>
+    <label style="grid-column:1/-1"><span class="label">Положение вдоль периметра <output id="positionOut"></output></span><input id="position" aria-label="Положение вдоль периметра" type="range" min="0" max="100" step="0.1" value="12.5"></label>
+  </div>
+  <div class="actions"><button id="start" class="primary">На весь экран</button><button id="hide">Скрыть панель · H</button><button id="pause">Пауза · пробел</button><button id="reset">Сначала</button></div>
+  <p class="help"><kbd>H</kbd> — панель · <kbd>F</kbd> — весь экран · <kbd>Пробел</kbd> — пауза · <kbd>1–6</kbd> — сцена · <kbd>← →</kbd> — сдвиг · <kbd>Esc</kbd> — выход. В «Точности» щёлкните по фону, чтобы поставить пятно. Размер и отступ — доли короткой стороны экрана.</p>
+  <p class="help">Для сравнения порога 0% / 3% используйте «Точность», затем добавьте ореол. Панель сама влияет на ленту — скройте её перед оценкой. Это визуальный тест, не измерение цвета.</p>
+  <div id="notice" role="status"></div>
+</main>
+<div id="hint" hidden>Панель: H · пауза: пробел · выход: Esc</div>
+<script>
+(() => {
+  'use strict';
+  const ui = Object.fromEntries([...document.querySelectorAll('[id]')].map(el => [el.id, el]));
+  const canvas = /** @type {HTMLCanvasElement} */ (ui.stage);
+  const ctx = canvas.getContext('2d', {alpha: false});
+  if (!ctx) { ui.notice.textContent = 'Браузер не поддерживает Canvas 2D.'; return; }
+  const descriptions = {
+    orbit: 'Шарик обходит все четыре стороны с постоянной скоростью. Начните без ореола, затем сравните с мягким свечением.',
+    spot: 'Белое пятно без ореола для проверки локальности. Сдвигайте ползунком, стрелками или щелчком по фону. Цвет и ореол можно менять.',
+    duo: 'Два противоположных участка с разными цветами. Проверка смешивания, соответствия сторон и запаздывания.',
+    sweep: 'Вертикальная полоса идёт слева направо и обратно. Смотрите на ширину отклика и след после прохождения.',
+    field: 'Ровная заливка для сравнения оттенков и яркости. «Чёрный» позволяет проверить полное затухание.',
+    sides: 'Верх — красный, справа — зелёный, снизу — синий, слева — белый. Углы чёрные, чтобы стороны не смешивались.'
+  };
+  const modeNames = Object.keys(descriptions);
+  const fixedColors = {white: [255,255,255], red: [255,0,0], green: [0,255,0], blue: [0,0,255], amber: [255,150,32], black: [0,0,0]};
+  let mode = 'orbit', paused = false, seconds = 0, phase = .125, last = 0;
+  let width = 1, height = 1, hintTimer = 0, labelsAt = 0, drawnAt = 0, dirty = true;
+  /** @type {{x:number,y:number}|null} */
+  let customSpot = null;
+  const value = id => Number(ui[id].value);
+  function resize() {
+    dirty = true;
+    width = innerWidth; height = innerHeight;
+    const ratio = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ui.dimensions.textContent = `${width} × ${height}\n${(width / height).toFixed(2)} : 1`;
+    updateLabels();
+  }
+  function updateLabels() {
+    const short = Math.min(width, height);
+    ui.sizeOut.textContent = `${value('size')}% · ${Math.round(short * value('size') / 100)} px`;
+    ui.insetOut.textContent = `${value('inset')}%`;
+    ui.periodOut.textContent = `${value('period')} с`;
+    ui.haloOut.textContent = value('halo') === 0 ? 'нет' : `${value('halo')}%`;
+    ui.levelOut.textContent = `${value('level')}%`;
+    ui.positionOut.textContent = customSpot ? 'свободное' : `${(phase * 100).toFixed(1)}%`;
+  }
+  function setMode(next) {
+    dirty = true;
+    mode = next; customSpot = null; seconds = 0; phase = .125;
+    if (mode === 'spot') { ui.color.value = 'white'; ui.halo.value = '0'; }
+    else if (mode === 'orbit' || mode === 'duo') ui.color.value = 'cycle';
+    document.querySelectorAll('[data-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
+    ui.description.textContent = descriptions[mode];
+    ui.position.value = String(phase * 100);
+    for (const id of ['size','inset','period','halo','color','position']) {
+      ui[id].disabled = mode === 'sides' || (mode === 'field' && id !== 'color') || (mode === 'spot' && id === 'period') || (mode === 'sweep' && ['inset','halo'].includes(id));
+    }
+    updateLabels();
+  }
+  function showPanel(show, hint = false) {
+    dirty = true;
+    clearTimeout(hintTimer);
+    ui.panel.hidden = !show; document.body.classList.toggle('testing', !show);
+    ui.hint.hidden = !hint;
+    if (!show && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    if (hint) hintTimer = setTimeout(() => { ui.hint.hidden = true; }, 2200);
+  }
+  async function fullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else { await document.documentElement.requestFullscreen(); showPanel(false, true); }
+    } catch { ui.notice.textContent = 'Полный экран недоступен здесь. Откройте файл в отдельном окне Firefox, Chrome или Safari.'; showPanel(true); }
+  }
+  function togglePause() { dirty = true; paused = !paused; ui.pause.textContent = paused ? 'Продолжить · пробел' : 'Пауза · пробел'; }
+  /** Constant distance around a rectangular path, with the entire disk on screen. */
+  function perimeter(position, radius) {
+    const inset = Math.min(width, height) * value('inset') / 100 + radius;
+    const x = Math.min(width / 2, inset), y = Math.min(height / 2, inset);
+    const w = Math.max(0, width - 2*x), h = Math.max(0, height - 2*y);
+    let d = ((position % 1 + 1) % 1) * 2 * (w + h);
+    if (d <= w) return [x+d,y]; d -= w;
+    if (d <= h) return [x+w,y+d]; d -= h;
+    if (d <= w) return [x+w-d,y+h]; d -= w;
+    return [x,y+h-d];
+  }
+  function color(offset = 0) {
+    if (ui.color.value !== 'cycle') return fixedColors[ui.color.value];
+    const hue = ((seconds / 40 + offset) % 1) * 6;
+    const x = 255 * (1 - Math.abs(hue % 2 - 1));
+    return [[255,x,0],[x,255,0],[0,255,x],[0,x,255],[x,0,255],[255,0,x]][Math.floor(hue)];
+  }
+  function css(rgb, alpha = 1) { return `rgba(${rgb.map(c => Math.round(c * value('level') / 100)).join(',')},${alpha})`; }
+  function disk(x,y,radius,rgb) {
+    if (value('halo') > 0) {
+      const reach = radius * (1 + value('halo') / 8);
+      const gradient = ctx.createRadialGradient(x,y,radius*.5,x,y,reach);
+      gradient.addColorStop(0,css(rgb,.5)); gradient.addColorStop(.25,css(rgb,.12)); gradient.addColorStop(1,css(rgb,0));
+      ctx.fillStyle = gradient; ctx.fillRect(x-reach,y-reach,reach*2,reach*2);
+    }
+    ctx.fillStyle = css(rgb); ctx.beginPath(); ctx.arc(x,y,radius,0,2*Math.PI); ctx.fill();
+  }
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - drawnAt < 1000/60) return;
+    const dt = last ? Math.min(.1, (now-last)/1000) : 0; last = now;
+    const animated = !paused && (['orbit','duo','sweep'].includes(mode) || (ui.color.value === 'cycle' && mode !== 'sides'));
+    if (!dirty && !animated) return;
+    dirty = false; drawnAt = now;
+    if (!paused) {
+      seconds += dt;
+      if (['orbit','duo','sweep'].includes(mode)) phase = (phase + dt/value('period')) % 1;
+    }
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,width,height);
+    const radius = Math.min(width,height) * value('size') / 200;
+    if (mode === 'field') { ctx.fillStyle = css(color()); ctx.fillRect(0,0,width,height); }
+    else if (mode === 'sides') {
+      const band = Math.max(4,Math.min(width,height)*.04);
+      ctx.fillStyle=css(fixedColors.red); ctx.fillRect(band,0,width-2*band,band);
+      ctx.fillStyle=css(fixedColors.green); ctx.fillRect(width-band,band,band,height-2*band);
+      ctx.fillStyle=css(fixedColors.blue); ctx.fillRect(band,height-band,width-2*band,band);
+      ctx.fillStyle=css(fixedColors.white); ctx.fillRect(0,band,band,height-2*band);
+    } else if (mode === 'sweep') {
+      const x = (width-2*radius) * (1-Math.cos(phase*2*Math.PI))/2;
+      ctx.fillStyle=css(color()); ctx.fillRect(x,0,radius*2,height);
+    } else {
+      const point = customSpot && mode === 'spot' ? [customSpot.x*width,customSpot.y*height] : perimeter(phase,radius);
+      disk(...point,radius,color());
+      if (mode === 'duo') disk(...perimeter(phase+.5,radius),radius,color(.5));
+    }
+    if (!ui.panel.hidden && now-labelsAt > 100) { ui.position.value = String(phase*100); updateLabels(); labelsAt = now; }
+  }
+  document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+  document.querySelectorAll('input,select').forEach(input => input.addEventListener('input', () => {
+    dirty = true;
+    if (input.id === 'position') { phase = value('position')/100; customSpot = null; }
+    updateLabels();
+  }));
+  ui.start.addEventListener('click', fullscreen);
+  ui.hide.addEventListener('click', () => showPanel(false,true));
+  ui.pause.addEventListener('click', togglePause);
+  ui.reset.addEventListener('click', () => { dirty=true; seconds=0; phase=.125; customSpot=null; updateLabels(); });
+  canvas.addEventListener('click', event => {
+    if (mode === 'spot') { dirty=true; customSpot={x:event.clientX/width,y:event.clientY/height}; updateLabels(); }
+    else showPanel(ui.panel.hidden);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+    if (event.target instanceof HTMLElement && event.target.matches('input,select')) return;
+    const code = event.code;
+    if (code === 'KeyH') showPanel(ui.panel.hidden);
+    else if (code === 'KeyF') fullscreen();
+    else if (code === 'Space') togglePause();
+    else if (code.startsWith('Digit') && modeNames[Number(code.slice(5))-1]) setMode(modeNames[Number(code.slice(5))-1]);
+    else if (code === 'ArrowRight' || code === 'ArrowLeft') { dirty=true; phase = (phase + (code === 'ArrowRight' ? .005 : -.005) + 1)%1; customSpot=null; updateLabels(); }
+    else if (code === 'Escape') showPanel(true);
+    else return;
+    event.preventDefault();
+  });
+  document.addEventListener('fullscreenchange', () => { resize(); if (!document.fullscreenElement) showPanel(true); });
+  document.addEventListener('visibilitychange', () => { last=0; });
+  window.addEventListener('resize', resize);
+  resize(); setMode(mode); requestAnimationFrame(frame);
+})();
+</script>
+</html>

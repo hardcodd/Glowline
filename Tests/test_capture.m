@@ -26,6 +26,10 @@ int main(void) { @autoreleasepool {
     GlowlineRGB colors[731];
     [capture render:colors count:731];
     assert(colors[0].r==255 && colors[0].g==255 && colors[0].b==255);
+    assert(!capture.detailMode);
+    capture.detailMode=YES;
+    [capture render:colors count:731];
+    assert(colors[0].r==255 && colors[0].g==255 && colors[0].b==255);
     CFRelease(sample);CFRelease(format);CVPixelBufferRelease(pixel);
     [capture stream:capture.stream didStopWithError:[NSError errorWithDomain:@"GlowlineTest" code:1 userInfo:nil]];
     assert(capture.failed && !capture.ready);

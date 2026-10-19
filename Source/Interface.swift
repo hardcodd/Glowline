@@ -30,7 +30,7 @@ enum AppPalette {
 }
 private let amber = Color(nsColor: AppPalette.amber)
 private let pages: [(String, String)] = [("overview", "sparkles"), ("color", "slider.horizontal.3"), ("schedule", "clock"), ("capture", "viewfinder"), ("effects", "circle.lefthalf.filled"), ("profiles", "square.stack.3d.up"), ("app", "gearshape")]
-private let modeIcons = ["display", "lightbulb", "rectangle.fill.on.rectangle.fill", "wind", "rainbow", "flame"]
+private let modeIcons = ["display", "lightbulb", "rectangle.fill.on.rectangle.fill", "wind", "rainbow", "flame", "flame.fill", "sparkle", "waveform.path"]
 
 struct RootView: View {
     @ObservedObject var model: AppModel
@@ -46,8 +46,6 @@ struct RootView: View {
                 Divider().opacity(0.25)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        if !model.notice.isEmpty { notice }
-                        if (!model.isConnected && !model.isStarting) || (model.isConnected && model.settings.mode == 0 && model.status?.captureReady == 0) { connectionHelp }
                         switch model.page {
                         case "color": colorPage
                         case "schedule": schedulePage
@@ -59,11 +57,26 @@ struct RootView: View {
                         }
                     }.padding(28).frame(maxWidth: 920, alignment: .leading).frame(maxWidth: .infinity)
                 }
+                .accessibilityIdentifier("settings.scroll")
+                .overlay(alignment: .top) {
+                    // Transient status must not insert rows above a slider being dragged.
+                    VStack(spacing: 12) {
+                        if !model.notice.isEmpty {
+                            notice.background(canvas, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        if !model.connectionHelpDismissed && ((!model.isConnected && !model.isStarting) || (model.isConnected && model.settings.mode == 0 && model.status?.captureReady == 0)) {
+                            connectionHelp.background(canvas, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                    }
+                    .padding(.horizontal, 28).padding(.top, 12)
+                    .frame(maxWidth: 920)
+                }
             }.background(canvas)
         }
         .frame(minWidth: 980, minHeight: 690)
         .tint(amber)
         .modifier(AppearanceButtonLabels())
+        .onChange(of: model.connectionTitle) { _, _ in model.connectionHelpDismissed = false }
         .confirmationDialog(tr("reset.confirm"), isPresented: $model.confirmReset, titleVisibility: .visible) {
             Button(tr("settings.reset"), role: .destructive) { model.resetDefaults() }
         }
@@ -115,6 +128,9 @@ struct RootView: View {
             Spacer()
             if !model.permission && model.settings.mode == 0 { Button(tr("permission.allow")) { model.requestPermission() }.buttonStyle(.borderedProminent) }
             else { Button(tr("device.retry")) { model.refreshDevices(); model.restartEngine() }.buttonStyle(.bordered) }
+            Button { model.connectionHelpDismissed = true } label: { Image(systemName: "xmark") }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .accessibilityLabel(tr("notice.dismiss"))
         }.padding(18).background(amber.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
     }
     private var overview: some View {
@@ -224,23 +240,67 @@ struct RootView: View {
     private var effectsPage: some View {
         VStack(spacing: 20) {
             card("mode.title", icon: "sparkles") { modeGrid }
-            card("effects.palette", icon: "paintpalette") {
-                ColorPicker(tr("effects.primary"), selection: colorBinding(\.primary), supportsOpacity: false)
-                ColorPicker(tr("effects.secondary"), selection: colorBinding(\.secondary), supportsOpacity: false).disabled(model.settings.mode != 2)
-                HStack(spacing: 12) {
-                    ForEach(Array([RGB.amber, RGB(red: 1, green: 0.3, blue: 0.15), RGB.blue, RGB(red: 0.2, green: 1, blue: 0.65), RGB(red: 1, green: 0.9, blue: 0.7)].enumerated()), id: \.offset) { _, color in
-                        Button { model.settings.primary = color } label: { Circle().fill(color.color).frame(width: 27, height: 27).overlay(Circle().stroke(.white.opacity(0.25))) }.buttonStyle(.plain).accessibilityLabel(tr("effects.swatch"))
-                    }
-                    Spacer()
-                }.padding(.top, 6)
-                Text(tr("help.palette")).font(.caption).foregroundStyle(.secondary)
+            card("effects.settings.\(model.settings.mode)", icon: modeIcons[model.settings.mode]) {
+                effectControls
+                Text(tr("effects.savedSeparately")).font(.caption).foregroundStyle(.secondary)
             }
-            card("effects.motion", icon: "waveform.path") {
-                settingSlider("control.speed", value: $model.settings.speed, range: 0.1...5, step: 0.1, format: { String(format: "%.1f×", $0) })
-                Toggle(tr("control.reverse"), isOn: $model.settings.reverse)
-                Text(tr("help.effects")).font(.caption).foregroundStyle(.secondary)
-            }.disabled(![3,4,5].contains(model.settings.mode))
         }
+    }
+    @ViewBuilder private var effectControls: some View {
+        switch model.settings.mode {
+        case 0:
+            Toggle(tr("control.detailMode"), isOn: $model.settings.detailMode)
+            Text(tr("help.detailMode")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            settingSlider("control.depth", value: $model.settings.edgeDepth, range: 0...0.35, format: percent, help: "help.depth")
+            DepthPreview(depth: model.settings.edgeDepth)
+        case 1:
+            effectColors(secondary: false)
+        case 2:
+            effectColors(secondary: true)
+            settingSlider("effects.gradientBalance", value: $model.settings.effect.gradientBalance, range: 0.1...0.9, format: percent, help: "help.gradientBalance")
+        case 3:
+            effectColors(secondary: false)
+            effectSpeed
+            settingSlider("effects.breathingFloor", value: $model.settings.effect.breathingFloor, range: 0...0.8, format: percent, help: "help.breathingFloor")
+        case 4:
+            effectSpeed
+            settingSlider("effects.rainbowCycles", value: $model.settings.effect.rainbowCycles, range: 0.5...3, step: 0.1, format: multiplier, help: "help.rainbowCycles")
+            effectDirection
+        case 5:
+            effectSpeed
+            settingSlider("effects.candleFlicker", value: $model.settings.effect.candleFlicker, range: 0...1, format: percent, help: "help.candleFlicker")
+        case 6:
+            effectSpeed
+            settingSlider("effects.flameHeight", value: $model.settings.effect.flameHeight, range: 0.3...2, format: percent, help: "help.flameHeight")
+        case 7:
+            effectColors(secondary: true)
+            effectSpeed
+            settingSlider("effects.cometTail", value: $model.settings.effect.cometTail, range: 0.3...2, format: percent, help: "help.cometTail")
+            effectDirection
+        default:
+            effectSpeed
+            settingSlider("effects.auroraPink", value: $model.settings.effect.auroraPink, range: 0...2, format: percent, help: "help.auroraPink")
+            effectDirection
+        }
+    }
+    private var effectSpeed: some View {
+        settingSlider("control.speed", value: $model.settings.effect.speed, range: 0.1...5, step: 0.1, format: multiplier)
+    }
+    private var effectDirection: some View {
+        Toggle(tr("control.reverse"), isOn: $model.settings.effect.reverse).accessibilityIdentifier("control.reverse")
+    }
+    private func multiplier(_ value: Double) -> String { String(format: "%.1f×", value) }
+    @ViewBuilder private func effectColors(secondary: Bool) -> some View {
+        ColorPicker(tr("effects.primary"), selection: effectColorBinding(\.primary), supportsOpacity: false)
+        if secondary {
+            ColorPicker(tr("effects.secondary"), selection: effectColorBinding(\.secondary), supportsOpacity: false)
+        }
+        HStack(spacing: 12) {
+            ForEach(Array([RGB.amber, RGB(red: 1, green: 0.3, blue: 0.15), RGB.blue, RGB(red: 0.2, green: 1, blue: 0.65), RGB(red: 1, green: 0.9, blue: 0.7)].enumerated()), id: \.offset) { _, color in
+                Button { model.settings.effect.primary = color } label: { Circle().fill(color.color).frame(width: 27, height: 27).overlay(Circle().stroke(.white.opacity(0.25))) }.buttonStyle(.plain).accessibilityLabel(tr("effects.swatch"))
+            }
+            Spacer()
+        }.padding(.top, 6)
     }
     private var profilesPage: some View {
         VStack(spacing: 20) {
@@ -308,7 +368,7 @@ struct RootView: View {
     }
     private var modeGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
-            ForEach(0..<6) { mode in
+            ForEach(Settings.supportedModes, id: \.self) { mode in
                 Button { model.settings.mode = mode } label: {
                     HStack(spacing: 12) {
                         Image(systemName: modeIcons[mode]).font(.system(size: 20)).frame(width: 25).foregroundStyle(model.settings.mode == mode ? amber : Color.secondary)
@@ -342,7 +402,7 @@ struct RootView: View {
     private func sideRow(_ key: String, enabled: Binding<Bool>, gain: Binding<Double>) -> some View {
         HStack(spacing: 16) { Toggle(tr(key), isOn: enabled).toggleStyle(.switch).frame(width: 155, alignment: .leading); steppedSlider(gain, scale: SliderScale(range: 0...2, step: 0.01)).disabled(!enabled.wrappedValue).accessibilityLabel(tr(key) + " " + tr("control.brightness")); Text(percent(gain.wrappedValue)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 44) }
     }
-    private func colorBinding(_ path: WritableKeyPath<Settings, RGB>) -> Binding<Color> { Binding(get: { model.settings[keyPath: path].color }, set: { model.settings[keyPath: path] = RGB(color: $0) }) }
+    private func effectColorBinding(_ path: WritableKeyPath<EffectSettings, RGB>) -> Binding<Color> { Binding(get: { model.settings.effect[keyPath: path].color }, set: { model.settings.effect[keyPath: path] = RGB(color: $0) }) }
     private func percent(_ value: Double) -> String { String(format: "%.0f%%", value * 100) }
     private func milliseconds(_ value: Double) -> String { String(format: "%.0f ms", value * 1000) }
     private func stat(_ key: String, value: String, icon: String) -> some View {

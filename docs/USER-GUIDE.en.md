@@ -1,8 +1,10 @@
 # Glowline — macOS Ambient Lighting for Skydimo SK0L34
 
-Glowline is a native macOS menu-bar app that syncs a **Skydimo SK0L34 USB monitor backlight with 112 LEDs** to the edges of your screen. It provides six lighting modes, adjustable warm bias lighting, per-side color correction and local profiles in a SwiftUI interface.
+Glowline is a native macOS menu-bar app that syncs a **Skydimo SK0L34 USB monitor backlight with 112 LEDs** to the edges of your screen. It provides nine lighting modes, adjustable warm bias lighting, per-side color correction and local profiles in a SwiftUI interface.
 
 [Download for Apple Silicon](https://github.com/hardcodd/Glowline/releases/latest) · [Русское руководство](../РУКОВОДСТВО.md) · [Installation and updates](INSTALL.md) · [Report an issue](https://github.com/hardcodd/Glowline/issues)
+
+This guide describes the current source. Fire, Comet, Aurora and per-effect controls are not yet included in the published 1.1.0 release.
 
 ![Glowline macOS app showing screen-synced Skydimo SK0L34 112-LED ambient lighting, brightness and warmth controls](images/glowline-macos-ambient-lighting.png)
 
@@ -38,7 +40,7 @@ No Python, RTK, Xcode or paid Apple developer account is needed to run the packa
 2. Extract the ZIP or open the DMG. Copy `Glowline.app` to `~/Applications/` and launch it from that permanent location. Create the folder if needed.
 3. If macOS blocks the app because the developer cannot be verified or Apple cannot check it, dismiss the warning. Open **System Settings → Privacy & Security**, find the Glowline message and click **Open Anyway**, then confirm **Open**. Only do this for the official download you trust. macOS normally remembers this exception for that copy. [Apple's instructions](https://support.apple.com/en-us/102445).
 4. Quit Skydimo and any other app controlling the strip. Under **Приложение**, select your USB serial port. A fresh installation has no preselected port.
-5. For **Экран** mode, grant Glowline **Screen Recording** permission in macOS Privacy & Security. Quit and reopen it if requested. The other five modes work without screen access.
+5. For **Экран** mode, grant Glowline **Screen Recording** permission in macOS Privacy & Security. Quit and reopen it if requested. The other eight modes work without screen access.
 6. Check login-launch status under **Приложение**. Login launch and hidden startup are enabled by default; macOS may require approval in Login Items.
 
 Do not disable Gatekeeper globally. A warning that the app is damaged or will harm your computer requires investigation; it is not the ordinary unidentified-developer prompt. A managed Mac may prohibit exceptions. Downloaded-package first launch on a clean Mac has not yet been verified.
@@ -57,8 +59,29 @@ For checksum verification, updates, permission recovery and removal, see the [in
 | Дыхание — Breathing | Animated brightness changes |
 | Радуга — Rainbow | Moving multicolor effect |
 | Свеча — Candle | Warm animated glow |
+| Пламя — Fire | Hot embers and animated tongues of flame |
+| Комета — Comet | Moving light with a fading colored tail |
+| Северное сияние — Aurora | Smooth overlapping waves of color |
 
 The master light switch sends black without losing your settings. Effect colors, speed and direction are adjustable where applicable.
+
+Comet uses both selected colors for its long fading tail, with a light core. Aurora uses its own emerald, teal, blue, violet and pink palette; Fire uses coal-to-yellow tones. Fire has its own vertical orientation without changing the screen-mode sampling map. Speed is adjustable for every animation; Reverse is available for Rainbow, Comet and Aurora. Profiles preserve the new modes; existing mode IDs are unchanged. Their appearance on physical LEDs needs separate assessment.
+
+On the **Режимы и эффекты** page, the panel below the mode grid shows only controls for the selected effect:
+
+| Mode | Dedicated controls |
+| --- | --- |
+| Screen | Color detail and capture depth; shared with the capture page |
+| Solid | Color and preset swatches |
+| Gradient | Two colors and transition midpoint |
+| Breathing | Color, speed and minimum glow between pulses |
+| Rainbow | Speed, direction and spectrum density |
+| Candle | Speed and flicker strength |
+| Fire | Speed and flame height |
+| Comet | Two colors, speed, direction and tail length |
+| Aurora | Speed, direction and pink contribution |
+
+Each effect independently remembers its colors, speed, direction and artistic parameters across switching and relaunch. Profiles and JSON exports include all sets. Older settings and profiles use their previous colors and speed as initial values; opening them does not overwrite other modes. Brightness, schedule, color calibration, smoothing, layout and performance remain global. A saved profile is a snapshot: save it again after tuning.
 
 ## Settings
 
@@ -68,11 +91,13 @@ The master light switch sends black without losing your settings. Effect colors,
 | Цвет и теплота | Brightness, warmth, saturation, gamma, RGB gains and black threshold |
 | Расписание | Daily local-time periods with separate day/night brightness |
 | Захват экрана | Display, weighted edge depth, fade-in/fade-out, mirror, LED offset, side enable/gain controls, capture rate and output pacing |
-| Режимы и эффекты | Mode, effect colors, speed and direction |
+| Режимы и эффекты | Nine modes and a dedicated panel for the selected effect |
 | Мои профили | Named profiles, JSON import/export and reset to defaults |
 | Приложение | USB port, reconnect, launch at login, hidden startup, off-on-quit, appearance, permissions and log |
 
 Appearance offers **Как в macOS** (follow macOS), **Тёмное** (dark) and **Светлое** (light). System mode follows macOS after either manual theme; the light theme pairs a bright amber accent with dark labels for readability.
+
+Connection status keeps updating while a slider is dragged. Notices do not shift the scrollable settings; dismiss the connection banner with its close button.
 
 Controls apply and save automatically, including across a complete quit and restart. Named profiles are separate snapshots: save again after adjustments to update one. Defaults are brightness **100%**, warmth **50%**, mirror enabled, edge depth **15%**, fade-out time constant **180 ms**, immediate fade-in, capture **120 Hz**, output limit **33.68 FPS** and static heartbeat **100 ms**. Warmth can be increased to **90%**; it is an artistic adjustment, not a calibrated Kelvin value.
 

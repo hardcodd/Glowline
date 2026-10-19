@@ -17,6 +17,13 @@ struct EngineStatus: Decodable {
 }
 struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
 
+/// Native sliders enter event-tracking mode; keep engine health polling alive there.
+@MainActor func statusPollingTimer(_ poll: @escaping () -> Void) -> Timer {
+    let timer = Timer(timeInterval: 0.5, repeats: true) { _ in poll() }
+    RunLoop.main.add(timer, forMode: .common)
+    return timer
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published var settings = Settings() { didSet { if initialized { scheduleSave() } } }
     @Published private(set) var effectiveBrightness = 1.0
@@ -25,6 +32,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
     @Published var status: EngineStatus?
     @Published var message = ""
     @Published var notice = ""
+    @Published var connectionHelpDismissed = false
     @Published var permission = false
     @Published var loginStatus = ""
     @Published var displays: [DisplayChoice] = []
@@ -108,7 +116,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         configureLogin()
         applySettings()
         startEngine()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in Task { @MainActor in self?.tick() } }
+        timer = statusPollingTimer { [weak self] in self?.tick() }
     }
     private func scheduleSave() {
         pending?.cancel()

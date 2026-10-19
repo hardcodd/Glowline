@@ -89,7 +89,7 @@ int main(int argc,const char *argv[]){@autoreleasepool{
      if([tuning[@"detailMode"] isKindOfClass:[NSNumber class]])capture.detailMode=[tuning[@"detailMode"] boolValue];
      controls.warmth=warmth;
      if([tuning[@"enabled"] isKindOfClass:[NSNumber class]])controls.enabled=[tuning[@"enabled"] boolValue];
-     if([tuning[@"mode"] isKindOfClass:[NSNumber class]])controls.mode=MAX(0,MIN(5,[tuning[@"mode"] intValue]));
+     if([tuning[@"mode"] isKindOfClass:[NSNumber class]])controls.mode=MAX(0,MIN(GLOWLINE_MODE_COUNT-1,[tuning[@"mode"] intValue]));
      if([tuning[@"mirrored"] isKindOfClass:[NSNumber class]])controls.mirrored=[tuning[@"mirrored"] boolValue];
      if([tuning[@"offset"] isKindOfClass:[NSNumber class]])controls.offset=MAX(-111,MIN(111,[tuning[@"offset"] intValue]));
      if([tuning[@"reverse"] isKindOfClass:[NSNumber class]])controls.reverse=[tuning[@"reverse"] boolValue];
@@ -98,6 +98,13 @@ int main(int argc,const char *argv[]){@autoreleasepool{
      if([tuning[@"gamma"] isKindOfClass:[NSNumber class]])controls.gamma=bounded([tuning[@"gamma"] doubleValue],.5,2.5,1);
      if([tuning[@"blackThreshold"] isKindOfClass:[NSNumber class]])controls.blackThreshold=bounded([tuning[@"blackThreshold"] doubleValue],0,.2,0);
      if([tuning[@"speed"] isKindOfClass:[NSNumber class]])controls.speed=bounded([tuning[@"speed"] doubleValue],.1,5,1);
+     if([tuning[@"gradientBalance"] isKindOfClass:[NSNumber class]])controls.gradientBalance=bounded([tuning[@"gradientBalance"] doubleValue],0.1,0.9,0.5);
+     if([tuning[@"breathingFloor"] isKindOfClass:[NSNumber class]])controls.breathingFloor=bounded([tuning[@"breathingFloor"] doubleValue],0,0.8,0.15);
+     if([tuning[@"rainbowCycles"] isKindOfClass:[NSNumber class]])controls.rainbowCycles=bounded([tuning[@"rainbowCycles"] doubleValue],0.5,3,1);
+     if([tuning[@"candleFlicker"] isKindOfClass:[NSNumber class]])controls.candleFlicker=bounded([tuning[@"candleFlicker"] doubleValue],0,1,1);
+     if([tuning[@"flameHeight"] isKindOfClass:[NSNumber class]])controls.flameHeight=bounded([tuning[@"flameHeight"] doubleValue],0.3,2,1);
+     if([tuning[@"cometTail"] isKindOfClass:[NSNumber class]])controls.cometTail=bounded([tuning[@"cometTail"] doubleValue],0.3,2,1);
+     if([tuning[@"auroraPink"] isKindOfClass:[NSNumber class]])controls.auroraPink=bounded([tuning[@"auroraPink"] doubleValue],0,2,1);
      if([tuning[@"attackSeconds"] isKindOfClass:[NSNumber class]])attackSeconds=bounded([tuning[@"attackSeconds"] doubleValue],0,1,0);
      for(int j=0;j<3;j++){
       NSString *gainKey=@[@"redGain",@"greenGain",@"blueGain"][j];

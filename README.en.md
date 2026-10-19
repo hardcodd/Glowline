@@ -23,10 +23,13 @@ Closing the window keeps lighting running. Reopen settings through the menu-bar 
 
 ## Features
 
-- **Six modes:** screen, solid, gradient, breathing, rainbow and candle.
+The features below describe the current source. Fire, Comet, Aurora and per-effect controls are not yet included in the published 1.1.0 release.
+
+- **Nine modes:** screen, solid, gradient, breathing, rainbow, candle, fire, comet and aurora.
 - **Color and warmth:** brightness, saturation, gamma and per-side correction.
 - **Color detail:** switch between dominant-hue sampling and standard averaging.
 - **Brightness schedule:** editable day/night start times and brightness, easy to adjust seasonally. Disabled by default.
+- **Per-effect controls:** colors, motion and artistic settings are remembered independently for each mode.
 - **Profiles:** save settings and import/export JSON.
 - **Light, dark and system appearance**, login launch and menu-bar controls.
 

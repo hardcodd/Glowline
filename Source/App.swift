@@ -47,7 +47,7 @@ import Combine
         menu.addItem(.separator())
         add(menu, title: tr("menu.open"), action: #selector(openAction), key: ",")
         add(menu, title: tr(model.settings.enabled ? "menu.off" : "menu.on"), action: #selector(toggleAction), key: "")
-        let modes = NSMenu(); for i in 0..<6 { let entry = NSMenuItem(title: tr("mode.\(i)"), action: #selector(modeAction(_:)), keyEquivalent: ""); entry.target = self; entry.tag = i; entry.state = model.settings.mode == i ? .on : .off; modes.addItem(entry) }
+        let modes = NSMenu(); for i in Settings.supportedModes { let entry = NSMenuItem(title: tr("mode.\(i)"), action: #selector(modeAction(_:)), keyEquivalent: ""); entry.target = self; entry.tag = i; entry.state = model.settings.mode == i ? .on : .off; modes.addItem(entry) }
         let modesEntry = NSMenuItem(title: tr("mode.title"), action: nil, keyEquivalent: ""); modesEntry.submenu = modes; menu.addItem(modesEntry)
         if !model.profiles.isEmpty {
             let profiles = NSMenu()

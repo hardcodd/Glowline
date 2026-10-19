@@ -45,8 +45,55 @@ struct BrightnessSchedule: Codable, Equatable {
     }
 }
 
+/// Independent artistic controls. Defaults reproduce the legacy effects exactly.
+/// Missing additive fields inherit defaults; present invalid types reject the import.
+struct EffectSettings: Codable, Equatable {
+    var primary = RGB.amber
+    var secondary = RGB.blue
+    var speed = 1.0
+    var reverse = false
+    var gradientBalance = 0.5
+    var breathingFloor = 0.15
+    var rainbowCycles = 1.0
+    var candleFlicker = 1.0
+    var flameHeight = 1.0
+    var cometTail = 1.0
+    var auroraPink = 1.0
+    private enum CodingKeys: String, CodingKey { case primary, secondary, speed, reverse, gradientBalance, breathingFloor, rainbowCycles, candleFlicker, flameHeight, cometTail, auroraPink }
+    init() {}
+    init(from decoder: Decoder) throws {
+        self.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        if values.contains(.primary) { primary = try values.decode(RGB.self, forKey: .primary) }
+        if values.contains(.secondary) { secondary = try values.decode(RGB.self, forKey: .secondary) }
+        if values.contains(.speed) { speed = try values.decode(Double.self, forKey: .speed) }
+        if values.contains(.reverse) { reverse = try values.decode(Bool.self, forKey: .reverse) }
+        if values.contains(.gradientBalance) { gradientBalance = try values.decode(Double.self, forKey: .gradientBalance) }
+        if values.contains(.breathingFloor) { breathingFloor = try values.decode(Double.self, forKey: .breathingFloor) }
+        if values.contains(.rainbowCycles) { rainbowCycles = try values.decode(Double.self, forKey: .rainbowCycles) }
+        if values.contains(.candleFlicker) { candleFlicker = try values.decode(Double.self, forKey: .candleFlicker) }
+        if values.contains(.flameHeight) { flameHeight = try values.decode(Double.self, forKey: .flameHeight) }
+        if values.contains(.cometTail) { cometTail = try values.decode(Double.self, forKey: .cometTail) }
+        if values.contains(.auroraPink) { auroraPink = try values.decode(Double.self, forKey: .auroraPink) }
+        validate()
+    }
+    mutating func validate() {
+        primary = RGB(red: primary.red.clamped(0...1), green: primary.green.clamped(0...1), blue: primary.blue.clamped(0...1))
+        secondary = RGB(red: secondary.red.clamped(0...1), green: secondary.green.clamped(0...1), blue: secondary.blue.clamped(0...1))
+        speed = speed.clamped(0.1...5)
+        gradientBalance = gradientBalance.clamped(0.1...0.9)
+        breathingFloor = breathingFloor.clamped(0...0.8)
+        rainbowCycles = rainbowCycles.clamped(0.5...3)
+        candleFlicker = candleFlicker.clamped(0...1)
+        flameHeight = flameHeight.clamped(0.3...2)
+        cometTail = cometTail.clamped(0.3...2)
+        auroraPink = auroraPink.clamped(0...2)
+    }
+}
+
 /// Persisted preferences and the accepted hardware-specific defaults.
 struct Settings: Codable, Equatable {
+    static let supportedModes = 0...8
     var enabled = true
     var mode = 0
     var brightness = 1.0
@@ -72,6 +119,18 @@ struct Settings: Codable, Equatable {
     var secondary = RGB.blue
     var speed = 1.0
     var reverse = false
+    // Legacy flat values remain the fallback for untouched modes and older profiles.
+    var effectSettings: [String: EffectSettings] = [:]
+    var effect: EffectSettings {
+        get {
+            if let saved = effectSettings[String(mode)] { return saved }
+            var legacy = EffectSettings()
+            legacy.primary = primary; legacy.secondary = secondary
+            legacy.speed = speed; legacy.reverse = reverse
+            return legacy
+        }
+        set { effectSettings[String(mode)] = newValue }
+    }
     var port = ""
     var displayID: UInt32 = 0
     var theme = "dark"
@@ -81,7 +140,7 @@ struct Settings: Codable, Equatable {
     var offOnQuit = true
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, mode, brightness, brightnessSchedule, warmth, saturation, gamma, redGain, greenGain, blueGain, blackThreshold, edgeDepth, detailMode, releaseSeconds, attackSeconds, mirrored, offset, leftEnabled, topEnabled, rightEnabled, bottomEnabled, leftGain, topGain, rightGain, bottomGain, fps, captureFps, keepaliveSeconds, skipUnchanged, primary, secondary, speed, reverse, port, displayID, theme, launchAtLogin, startHidden, reconnect, offOnQuit
+        case effectSettings, enabled, mode, brightness, brightnessSchedule, warmth, saturation, gamma, redGain, greenGain, blueGain, blackThreshold, edgeDepth, detailMode, releaseSeconds, attackSeconds, mirrored, offset, leftEnabled, topEnabled, rightEnabled, bottomEnabled, leftGain, topGain, rightGain, bottomGain, fps, captureFps, keepaliveSeconds, skipUnchanged, primary, secondary, speed, reverse, port, displayID, theme, launchAtLogin, startHidden, reconnect, offOnQuit
     }
     init() {}
     /// Missing fields inherit current defaults; present invalid values still fail.
@@ -128,12 +187,18 @@ struct Settings: Codable, Equatable {
         if values.contains(.startHidden) { startHidden = try values.decode(Bool.self, forKey: .startHidden) }
         if values.contains(.reconnect) { reconnect = try values.decode(Bool.self, forKey: .reconnect) }
         if values.contains(.offOnQuit) { offOnQuit = try values.decode(Bool.self, forKey: .offOnQuit) }
+        if values.contains(.effectSettings) { effectSettings = try values.decode([String: EffectSettings].self, forKey: .effectSettings) }
         validate()
     }
 
     mutating func validate() {
-        mode = min(5, max(0, mode)); brightness = brightness.clamped(0...1)
+        mode = min(Self.supportedModes.upperBound, max(0, mode)); brightness = brightness.clamped(0...1)
         brightnessSchedule.validate()
+        effectSettings = effectSettings.filter { key, _ in
+            guard let mode = Int(key) else { return false }
+            return Self.supportedModes.contains(mode) && String(mode) == key
+        }
+        for key in Array(effectSettings.keys) { effectSettings[key]?.validate() }
         warmth = warmth.clamped(0...0.9); saturation = saturation.clamped(0...2)
         gamma = gamma.clamped(0.5...2.5); blackThreshold = blackThreshold.clamped(0...0.2)
         redGain = redGain.clamped(0...2); greenGain = greenGain.clamped(0...2); blueGain = blueGain.clamped(0...2)
@@ -159,7 +224,14 @@ struct Settings: Codable, Equatable {
         var safe = self; safe.validate()
         var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(safe)) as! [String: Any]
         object["brightness"] = safe.effectiveBrightness(at: date, calendar: calendar)
-        object["primary"] = safe.primary.bytes; object["secondary"] = safe.secondary.bytes
+        let active = safe.effect
+        object["primary"] = active.primary.bytes; object["secondary"] = active.secondary.bytes
+        object["speed"] = active.speed; object["reverse"] = active.reverse
+        object["effectSettings"] = nil
+        object["gradientBalance"] = active.gradientBalance; object["breathingFloor"] = active.breathingFloor
+        object["rainbowCycles"] = active.rainbowCycles; object["candleFlicker"] = active.candleFlicker
+        object["flameHeight"] = active.flameHeight; object["cometTail"] = active.cometTail
+        object["auroraPink"] = active.auroraPink
         object["drainEvery"] = 1; object["drainEach"] = false; object["queueLimit"] = 64; object["trace"] = false
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
@@ -185,6 +257,35 @@ struct SavedState: Codable {
 
 /// Behavior tests run without touching USB, permissions, login items, or preferences.
 func runSettingsTests() throws {
+    // Legacy values seed every mode, then edits must stay isolated and survive profiles.
+    var perMode = try Settings.decodeMerged(Data("{\"mode\":7,\"speed\":2.3,\"reverse\":true,\"primary\":{\"red\":0.2,\"green\":0.4,\"blue\":0.6}}".utf8))
+    let legacyEffect = perMode.effect
+    for mode in Settings.supportedModes {
+        perMode.mode = mode
+        precondition(perMode.effect == legacyEffect)
+        perMode.effect.speed = Double(mode + 1) * 0.4
+        perMode.effect.primary.red = Double(mode) / 10
+        perMode.effect.cometTail = 1.7
+    }
+    let perModeState = SavedState(settings: perMode, profiles: [Profile(name: "Independent effects", settings: perMode)])
+    let perModeRestored = try SavedState.decode(JSONEncoder().encode(perModeState))
+    precondition(perModeRestored.profiles[0].settings == perMode)
+    perMode = perModeRestored.settings
+    for mode in Settings.supportedModes {
+        perMode.mode = mode
+        precondition(abs(perMode.effect.speed - Double(mode + 1) * 0.4) < 0.00001)
+        precondition(perMode.effect.primary.red == Double(mode) / 10)
+        let payload = try JSONSerialization.jsonObject(with: perMode.engineData()) as! [String: Any]
+        precondition(payload["speed"] as? Double == perMode.effect.speed)
+        precondition(payload["primary"] as? [Int] == perMode.effect.primary.bytes)
+        precondition(payload["cometTail"] as? Double == 1.7)
+    }
+    perMode.effect.speed = 99; perMode.effect.cometTail = -1
+    perMode.validate()
+    precondition(perMode.effect.speed == 5 && perMode.effect.cometTail == 0.3)
+    let sparse = try Settings.decodeMerged(Data("{\"effectSettings\":{\"7\":{\"cometTail\":1.8}}}".utf8))
+    precondition(sparse.effectSettings["7"]?.cometTail == 1.8)
+    do { _ = try Settings.decodeMerged(Data("{\"effectSettings\":{\"7\":{\"speed\":\"bad\"}}}".utf8)); preconditionFailure("Invalid effect type accepted") } catch {}
     let defaults = Settings()
     precondition(defaults.port.isEmpty)
     let selectedPort = "/dev/cu.usbserial-example"
@@ -204,7 +305,7 @@ func runSettingsTests() throws {
     precondition(defaults.edgeDepth == 0.15 && defaults.releaseSeconds == 0.18 && defaults.launchAtLogin && defaults.startHidden)
     let roundtrip = try Settings.decodeMerged(JSONEncoder().encode(defaults)); precondition(roundtrip == defaults)
     let migrated = try Settings.decodeMerged(Data("{\"warmth\":0.8,\"brightness\":2,\"mode\":99}".utf8))
-    precondition(migrated.warmth == 0.8 && migrated.brightness == 1 && migrated.mode == 5 && migrated.mirrored)
+    precondition(migrated.warmth == 0.8 && migrated.brightness == 1 && migrated.mode == 8 && migrated.mirrored)
     let engine = try JSONSerialization.jsonObject(with: defaults.engineData()) as! [String: Any]
     precondition((engine["primary"] as? [Int]) == [255,160,64]); precondition((engine["drainEvery"] as? Int) == 1)
     precondition((engine["skipUnchanged"] as? Bool) == true)

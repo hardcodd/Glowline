@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Exercise startup recovery and persistence only in a disposable data directory.
 @MainActor func runModelTests() throws {
@@ -7,6 +8,15 @@ import Foundation
     defer { try? FileManager.default.removeItem(at: directory) }
     let fresh = AppModel(stateDirectory: directory.appendingPathComponent("fresh"), inspectSystem: false)
     precondition(fresh.settings.port.isEmpty && fresh.profiles.isEmpty && fresh.notice.isEmpty)
+    var trackingTicks = 0
+    _ = NSApplication.shared
+    let trackingTimer = statusPollingTimer { trackingTicks += 1 }
+    defer { trackingTimer.invalidate() }
+    let trackingDeadline = Date().addingTimeInterval(1.2)
+    while trackingTicks == 0 && Date() < trackingDeadline {
+        RunLoop.main.run(mode: .eventTracking, before: trackingDeadline)
+    }
+    precondition(trackingTicks > 0, "Status polling stopped during slider event tracking")
     let state = directory.appendingPathComponent("settings.json")
     let legacy = Data("{\"schemaVersion\":1,\"settings\":{\"brightness\":0.37,\"launchAtLogin\":false,\"port\":\"/dev/cu.usbserial-example\"},\"profiles\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Legacy\",\"settings\":{\"warmth\":0.8}}]}".utf8)
     try legacy.write(to: state)
@@ -20,6 +30,28 @@ import Foundation
     model.applySettings()
     let reloaded = try SavedState.decode(Data(contentsOf: state))
     precondition(reloaded.settings == model.settings && reloaded.profiles.count == 1)
+    for mode in 0...8 {
+        model.settings.mode = mode
+        model.settings.effect.speed = Double(mode + 1) * 0.4
+        model.settings.effect.cometTail = 1.6
+        model.profileName = "Mode \(mode)"; model.saveProfile()
+        let savedMode = try SavedState.decode(Data(contentsOf: state))
+        precondition(savedMode.settings.mode == mode && savedMode.profiles.last?.settings.mode == mode)
+        let tuning = try JSONSerialization.jsonObject(with: Data(contentsOf: model.tuningURL)) as! [String: Any]
+        precondition(tuning["mode"] as? Int == mode)
+        precondition(tuning["speed"] as? Double == model.settings.effect.speed)
+        precondition(tuning["cometTail"] as? Double == 1.6)
+        model.settings.effect.speed = 4.9
+        model.settings.mode = 0
+        model.activate(savedMode.profiles.last!)
+        precondition(model.settings.mode == mode)
+        precondition(model.settings.effect == savedMode.settings.effect)
+    }
+    let independentStartup = AppModel(stateDirectory: directory, inspectSystem: false)
+    for mode in Settings.supportedModes {
+        independentStartup.settings.mode = mode
+        precondition(abs(independentStartup.settings.effect.speed - Double(mode + 1) * 0.4) < 0.00001)
+    }
     let invalid = Data("{invalid-json".utf8)
     try invalid.write(to: state)
     let recovered = AppModel(stateDirectory: directory, inspectSystem: false)

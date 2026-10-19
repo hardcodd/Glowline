@@ -3,6 +3,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 static int color_distance(GlowlineRGB a,GlowlineRGB b){return abs((int)a.r-b.r)+abs((int)a.g-b.g)+abs((int)a.b-b.b);}
+static int color_level(GlowlineRGB color){return color.r+color.g+color.b;}
+/* On the mounted left edge, i+1 is above i. For upward advection,
+ * temporal changes correlate with the downward spatial derivative. Averaging
+ * over time separates travel direction from the static brightness gradient. */
+static void test_fire_rises(void){
+ EngineControls c=default_controls();c.mode=6;
+ const double heights[]={.3,1,2};
+ for(size_t height=0;height<3;height++){
+  c.flameHeight=heights[height];double direction=0;
+  for(int frame=0;frame<1200;frame++)for(size_t i=1;i<14;i++){
+   double t=frame/20.;
+   double temporal=color_level(mode_color(i,t+.01,&c))-color_level(mode_color(i,t-.01,&c));
+   double downward=color_level(mode_color(i-1,t,&c))-color_level(mode_color(i+1,t,&c));
+   direction+=temporal*downward;
+  }
+  assert(direction>0 && "Fire tongues must travel upward on the mounted strip");
+ }
+}
 /* Exercise observable animation contracts rather than exact noise samples. */
 static void test_new_effects(void){
  EngineControls c=default_controls();c.primary=(GlowlineRGB){255,120,20};c.secondary=(GlowlineRGB){20,80,255};
@@ -52,6 +70,7 @@ static void test_new_effects(void){
  assert(green>100&&cyan>100&&pink>100);
 }
 int main(void){
+ test_fire_rises();
  // Characteristic controls change the intended shape without changing other modes.
  EngineControls base=default_controls(),tuned=base;
  base.mode=tuned.mode=2;tuned.gradientBalance=.8;

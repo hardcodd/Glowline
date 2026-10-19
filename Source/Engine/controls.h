@@ -39,8 +39,8 @@ static GlowlineRGB mode_color(size_t i,double seconds,const EngineControls *c){
  if(c->mode==3){double level=c->breathingFloor+(1-c->breathingFloor)*(.5-.5*cos(phase*1.25));return (GlowlineRGB){lround(a.r*level),lround(a.g*level),lround(a.b*level)};}
  if(c->mode==4)return hsv_rgb(position*c->rainbowCycles+phase*.06,1,1);
  if(c->mode==5){double light=.75+c->candleFlicker*(.12*sin(phase*2.3+position*2)+.06*sin(phase*4.1+position*5));return (GlowlineRGB){lround(255*light),lround(108*light),lround(20*light)};}
- // Fire has its own mounted-strip orientation; do not flip the screen sampling map.
- if(c->mode==6){size_t cell=grid_indices[i];return fire_color((cell%43)/42.,1-(cell/43)/16.,phase,c->flameHeight);}
+ // The mounted fire orientation flips both space and advection, preserving upward travel.
+ if(c->mode==6){size_t cell=grid_indices[i];return fire_color((cell%43)/42.,1-(cell/43)/16.,-phase,c->flameHeight);}
  if(c->mode==7)return comet_color(i/112.,phase,c->reverse,a,b,c->cometTail);
  if(c->mode==8)return aurora_color(i/112.,phase,c->auroraPink);
  return a;

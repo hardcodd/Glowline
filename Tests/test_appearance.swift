@@ -76,7 +76,7 @@ import SwiftUI
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
             host.layoutSubtreeIfNeeded()
             let scroll = scrollView(in: host)
-            let geometry = [scroll?.documentView?.frame.height ?? 0,
+            let geometry: [CGFloat] = [scroll?.documentView?.frame.height ?? 0,
                             scroll?.contentView.bounds.height ?? 0,
                             scroll?.contentView.bounds.origin.y ?? 0]
             stable = geometry == previous ? stable + 1 : 0

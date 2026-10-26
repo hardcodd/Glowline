@@ -21,6 +21,8 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
 @MainActor func statusPollingTimer(_ poll: @escaping () -> Void) -> Timer {
     let timer = Timer(timeInterval: 0.5, repeats: true) { _ in poll() }
     RunLoop.main.add(timer, forMode: .common)
+    // AppKit may not register event tracking as a common mode before app launch.
+    RunLoop.main.add(timer, forMode: .eventTracking)
     return timer
 }
 
@@ -63,8 +65,10 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
     private var lastTuningBrightness: Double?
     private let clock: () -> Date
     private let calendar: () -> Calendar
+    private let hardwareEnabled: Bool
 
-    init(stateDirectory: URL? = nil, inspectSystem: Bool = true, clock: @escaping () -> Date = Date.init, calendar: @escaping () -> Calendar = { .current }) {
+    init(stateDirectory: URL? = nil, inspectSystem: Bool = true, hardwareEnabled: Bool = true, clock: @escaping () -> Date = Date.init, calendar: @escaping () -> Calendar = { .current }) {
+        self.hardwareEnabled = hardwareEnabled
         self.clock = clock; self.calendar = calendar
         directory = stateDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Glowline", isDirectory: true)
         stateURL = directory.appendingPathComponent("settings.json")
@@ -86,7 +90,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
             }
         } catch { notice = tr("settings.error") + " " + error.localizedDescription }
         lastLoginPreference = settings.launchAtLogin
-        if inspectSystem {
+        if inspectSystem && hardwareEnabled {
             permission = CGPreflightScreenCaptureAccess(); hadPermission = permission
             refreshDevices()
         }
@@ -113,6 +117,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         return String(format: "%.1f FPS", s.fps)
     }
     func begin() {
+        guard hardwareEnabled else { applySettings(); return }
         configureLogin()
         applySettings()
         startEngine()
@@ -147,6 +152,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         }
     }
     func configureLogin() {
+        guard hardwareEnabled else { loginStatus = tr("ambient.review"); return }
         do {
             if settings.launchAtLogin && (SMAppService.mainApp.status == .notRegistered || SMAppService.mainApp.status == .notFound) { try SMAppService.mainApp.register() }
             if !settings.launchAtLogin && SMAppService.mainApp.status != .notRegistered { try SMAppService.mainApp.unregister() }
@@ -161,14 +167,16 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         default: loginStatus = tr("login.unavailable")
         }
     }
-    func openLoginSettings() { SMAppService.openSystemSettingsLoginItems() }
+    func openLoginSettings() { if hardwareEnabled { SMAppService.openSystemSettingsLoginItems() } }
     func requestPermission() {
+        guard hardwareEnabled else { return }
         _ = CGRequestScreenCaptureAccess()
         permission = CGPreflightScreenCaptureAccess()
         if permission { restartEngine() }
         else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") { NSWorkspace.shared.open(url) }
     }
     func refreshDevices() {
+        guard hardwareEnabled else { return }
         ports = ((try? FileManager.default.contentsOfDirectory(atPath: "/dev")) ?? []).filter { $0.hasPrefix("cu.usbserial-") }.map { "/dev/" + $0 }.sorted()
         displays = [DisplayChoice(id: 0, name: tr("display.main"))]
         for screen in NSScreen.screens {
@@ -197,7 +205,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         if process?.isRunning != true && settings.reconnect && Date().timeIntervalSince(lastAttempt) > 5 { startEngine() }
     }
     func startEngine() {
-        guard !quitting, !restarting, process?.isRunning != true else { return }
+        guard hardwareEnabled, !quitting, !restarting, process?.isRunning != true else { return }
         if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier?.lowercased().contains("skydimo") == true }) {
             message = tr("device.skydimo"); lastAttempt = Date(); return
         }

@@ -2,7 +2,7 @@
 
 [Русский](DISTRIBUTION.ru.md)
 
-The build and packaging scripts prepare artifacts without automatically publishing a GitHub release or submitting anything to Apple. Version 1.1.0 is distributed with ad-hoc signing and documented per-app Gatekeeper exception steps. Developer ID signing and notarization are recommended to simplify installation; they are not present in this release.
+The build and packaging scripts prepare artifacts without automatically publishing a GitHub release or submitting anything to Apple. Version 1.2.0 is distributed with ad-hoc signing and documented per-app Gatekeeper exception steps. Developer ID signing and notarization are recommended to simplify installation; they are not present in this release.
 
 1. The project uses the [MIT License](../LICENSE). Confirm rights for included source/assets before distribution. The unused Skydimo plugin API header is no longer included. Platform frameworks are supplied by macOS; the application bundles no third-party runtime library. Removing a header is not a legal provenance audit of every historical file.
 2. Review source changes, increment `VERSION.json` build for a changed binary, and build on Apple Silicon with the minimum supported macOS SDK/runtime available. The bundle identifier stays `local.alex.Glowline` to preserve installed identity. Local self-tests use disposable settings directories; they never open USB or register login items.

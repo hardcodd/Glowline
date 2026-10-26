@@ -10,9 +10,16 @@ import Combine
     private var window: NSWindow?
     private var observer: NSObjectProtocol?
     private var appearanceObserver: AnyCancellable?
+    private var ambient: AmbientWindowController?
+    private let isReview = Bundle.main.object(forInfoDictionaryKey: "GlowlineAmbientReview") as? Bool == true
     func applicationDidFinishLaunching(_ notification: Notification) {
         let firstLaunch = !FileManager.default.fileExists(atPath: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Glowline/settings.json").path)
-        model = AppModel()
+        if isReview {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Glowline-ambient-review-state")
+            model = AppModel(stateDirectory: directory, inspectSystem: false, hardwareEnabled: false)
+            model.page = "app"
+            model.connectionHelpDismissed = true
+        } else { model = AppModel() }
         appearanceObserver = model.$settings.map(\.theme).removeDuplicates().sink { theme in
             AppAppearance.apply(theme)
         }
@@ -26,11 +33,13 @@ import Combine
         let login = NSAppleEventManager.shared().currentAppleEvent?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
         let background = CommandLine.arguments.contains("--background") || login
         if firstLaunch || !background || !model.settings.startHidden { showWindow() }
+        if CommandLine.arguments.contains("--screensaver") { openAmbientAction() }
     }
     private func buildMainMenu() {
         let bar = NSMenu()
         let appEntry = NSMenuItem(); let appMenu = NSMenu(); appEntry.submenu = appMenu; bar.addItem(appEntry)
         add(appMenu, title: tr("menu.open"), action: #selector(openAction), key: ",")
+        add(appMenu, title: tr("ambient.open"), action: #selector(openAmbientAction), key: "")
         appMenu.addItem(.separator())
         add(appMenu, title: tr("menu.quit"), action: #selector(quitAction), key: "q")
         let editEntry = NSMenuItem(title: tr("menu.edit"), action: nil, keyEquivalent: "")
@@ -46,6 +55,7 @@ import Combine
         let mode = NSMenuItem(title: model.modeName + " · " + model.rateText, action: nil, keyEquivalent: ""); mode.isEnabled = false; menu.addItem(mode)
         menu.addItem(.separator())
         add(menu, title: tr("menu.open"), action: #selector(openAction), key: ",")
+        add(menu, title: tr("ambient.open"), action: #selector(openAmbientAction), key: "")
         add(menu, title: tr(model.settings.enabled ? "menu.off" : "menu.on"), action: #selector(toggleAction), key: "")
         let modes = NSMenu(); for i in Settings.supportedModes { let entry = NSMenuItem(title: tr("mode.\(i)"), action: #selector(modeAction(_:)), keyEquivalent: ""); entry.target = self; entry.tag = i; entry.state = model.settings.mode == i ? .on : .off; modes.addItem(entry) }
         let modesEntry = NSMenuItem(title: tr("mode.title"), action: nil, keyEquivalent: ""); modesEntry.submenu = modes; menu.addItem(modesEntry)
@@ -59,6 +69,18 @@ import Combine
     }
     private func add(_ menu: NSMenu, title: String, action: Selector, key: String) { let entry = NSMenuItem(title: title, action: action, keyEquivalent: key); entry.target = self; menu.addItem(entry) }
     @objc private func openAction() { showWindow() }
+    @objc private func openAmbientAction() {
+        NSApp.setActivationPolicy(.regular)
+        if ambient == nil {
+            let controller = AmbientWindowController()
+            controller.onClose = { [weak self] in
+                self?.ambient = nil
+                self?.showWindow()
+            }
+            ambient = controller
+        }
+        ambient?.show()
+    }
     @objc private func toggleAction() { model.settings.enabled.toggle() }
     @objc private func modeAction(_ sender: NSMenuItem) { model.settings.mode = sender.tag }
     @objc private func profileAction(_ sender: NSMenuItem) { if model.profiles.indices.contains(sender.tag) { model.activate(model.profiles[sender.tag]) } }
@@ -66,24 +88,35 @@ import Combine
     func showWindow() {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 790), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            w.title = "Glowline"; w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
+            w.title = isReview ? "Glowline Review" : "Glowline"; w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
             w.isReleasedWhenClosed = false; w.delegate = self; w.minSize = NSSize(width: 1000, height: 725)
-            w.contentView = NSHostingView(rootView: RootView(model: model)); w.setFrameAutosaveName("Glowline.main"); w.center(); window = w
+            w.contentView = NSHostingView(rootView: RootView(model: model, openAmbient: { [weak self] in self?.openAmbientAction() })); w.setFrameAutosaveName(isReview ? "Glowline.ambientReview" : "Glowline.main"); w.center(); window = w
         }
         NSApp.setActivationPolicy(.regular); window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); NSApp.setActivationPolicy(.accessory); return false }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); NSApp.setActivationPolicy(ambient == nil ? .accessory : .regular); return false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationWillTerminate(_ notification: Notification) { model?.shutdown(); if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) } }
+    func applicationWillTerminate(_ notification: Notification) { ambient?.onClose = nil; ambient?.close(); ambient = nil; model?.shutdown(); if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) } }
 }
 
 @main struct GlowlineMain {
     @MainActor static func main() {
         if CommandLine.arguments.contains("--self-test") {
-            do { try runSettingsTests(); try runStatusTests(); runRecoveryTests(); try runModelTests(); runAppearanceTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
+            do { try runSettingsTests(); try runStatusTests(); runRecoveryTests(); try runModelTests(); runAppearanceTests(); runAmbientMotionTests(); try runAmbientIsolationTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--ambient-benchmark") {
+            do {
+                guard index+1 < CommandLine.arguments.count,
+                      let shader = Bundle.main.url(forResource: "Noctiluca", withExtension: "metal") else { throw RenderFailure.unavailable("Missing benchmark output directory or shader resource") }
+                try benchmark(shader: shader, directory: URL(fileURLWithPath: CommandLine.arguments[index+1]))
+            } catch { fputs("\(error)\n", stderr); exit(1) }
+            return
         }
         if CommandLine.arguments.contains("--disable-login") {
+            guard Bundle.main.object(forInfoDictionaryKey: "GlowlineAmbientReview") as? Bool != true else {
+                fputs("Login changes are disabled in the ambient review bundle.\n", stderr); exit(1)
+            }
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: "local.alex.Glowline").filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
             for other in others { _ = other.terminate() }
             for _ in 0..<50 {
@@ -97,7 +130,8 @@ import Combine
             } catch { fputs("Cannot disable login item: \(error)\n", stderr); exit(1) }
             return
         }
-        let existing = NSRunningApplication.runningApplications(withBundleIdentifier: "local.alex.Glowline").filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+        let identity = Bundle.main.bundleIdentifier ?? "local.alex.Glowline"
+        let existing = NSRunningApplication.runningApplications(withBundleIdentifier: identity).filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
         if let app = existing.first { app.activate(options: [.activateAllWindows]); return }
         let app = NSApplication.shared
         let delegate = AppDelegate(); app.delegate = delegate; app.setActivationPolicy(.accessory)

@@ -4,13 +4,13 @@ Glowline is a native macOS menu-bar app that syncs a **Skydimo SK0L34 USB monito
 
 [Download for Apple Silicon](https://github.com/hardcodd/Glowline/releases/latest) · [Русское руководство](../РУКОВОДСТВО.md) · [Installation and updates](INSTALL.md) · [Report an issue](https://github.com/hardcodd/Glowline/issues)
 
-This guide describes the current source. Fire, Comet, Aurora and per-effect controls are not yet included in the published 1.1.0 release.
+This guide describes Glowline 1.2.0, including Fire, Comet, Aurora, per-effect controls and the built-in Metal night light.
 
 ![Glowline macOS app showing screen-synced Skydimo SK0L34 112-LED ambient lighting, brightness and warmth controls](images/glowline-macos-ambient-lighting.png)
 
-*Actual running application; Russian interface. The monitor outline previews transmitted colors, not measured light output. Screenshot from version 1.0.0; the current sidebar also includes Schedule.*
+*Actual running application; Russian interface. The monitor outline previews transmitted colors, not measured light output. The current interface includes Schedule and nine lighting modes.*
 
-**Version 1.1.0, build 3:** Apple Silicon, macOS 15+. The download is ad-hoc signed, without a paid Developer ID certificate or Apple notarization. First launch may require a manual exception in macOS settings; see below.
+**Version 1.2.0, build 4:** Apple Silicon, macOS 15+. The download is ad-hoc signed, without a paid Developer ID certificate or Apple notarization. First launch may require a manual exception in macOS settings; see below.
 
 [Compatible LED strip](#compatible-led-strip) · [Install and first launch](#install-and-first-launch) · [Lighting modes](#lighting-modes) · [Settings](#settings) · [Troubleshooting](#troubleshooting) · [Build from source](#build-from-source)
 
@@ -83,6 +83,16 @@ On the **Режимы и эффекты** page, the panel below the mode grid sh
 
 Each effect independently remembers its colors, speed, direction and artistic parameters across switching and relaunch. Profiles and JSON exports include all sets. Older settings and profiles use their previous colors and speed as initial values; opening them does not overwrite other modes. Brightness, schedule, color calibration, smoothing, layout and performance remain global. A saved profile is a snapshot: save it again after tuning.
 
+## Built-in Noctiluca night light
+
+In Glowline 1.2.0 for macOS, the night light is part of Glowline itself. Open **Приложение → Запустить ночник** or the matching Glowline menu item. No separate app, browser or Internet connection is required. The night light renders locally with Metal; no separate runtime is installed.
+
+Small bodies have compact irregular rocky cores, hot leading faces and asymmetric ablation shells. As size increases, they transition into suns with convective surfaces and sparse plasma arches above the corona. Fiery stars fall independently: smaller stars are faster; most fall gently, while occasional central meteors take opposing diagonals of up to 34 degrees; large stars fall vertically, with only one large star and its remaining effects at a time. On contact, the smaller star breaks up at the collision point, throwing sparks, molten fragments and gas. The larger star keeps its size, speed and trajectory; a smaller body cannot destroy a giant. Smoke stays along the traveled path. At the bottom edge, a layered burst throws angular molten fragments, fast sparks and shaded gas that disperses into dust. A giant continues descending until its upper limb reaches the bottom third of the screen; its broad explosion then rises from the lower edge. Ejecta scale with its radius. Select **Экран** mode to make the strip follow the image; opening the night light does not change strip settings.
+
+**Esc** closes the night light and returns to Glowline. **F** toggles fullscreen, **Space** pauses, **S** opens settings, **N** toggles the night preset and **H** hides controls. The scene selector currently contains **Starfall** (Звездопад); the experimental flowing-light scenes and automatic cycling have been removed. Settings include three palettes, 3–100% brightness, 0.2–1.3× speed, fill or 21:9 framing, rare black pauses and a 30/60/120-minute timer. The timer fades during its final 20 seconds, then stops rendering; Space resumes playback. Ambient preferences are separate from strip profiles. Closing releases GPU resources and display-sleep prevention without quitting Glowline.
+
+Rendering uses Metal, bounded solar geometry, HDR compositing and a fixed GPU particle pool; smoke is reconstructed from half linear resolution. Displays at 120 Hz or above use half their refresh rate (72 FPS at 144 Hz); others target 60 FPS. Actual FPS and GPU timing appear in the window. These are targets, not universal hardware guarantees. **Показать гиганта** manually previews the rare event without changing its normal probability.
+
 ## Settings
 
 | Page | Controls |
@@ -93,7 +103,7 @@ Each effect independently remembers its colors, speed, direction and artistic pa
 | Захват экрана | Display, weighted edge depth, fade-in/fade-out, mirror, LED offset, side enable/gain controls, capture rate and output pacing |
 | Режимы и эффекты | Nine modes and a dedicated panel for the selected effect |
 | Мои профили | Named profiles, JSON import/export and reset to defaults |
-| Приложение | USB port, reconnect, launch at login, hidden startup, off-on-quit, appearance, permissions and log |
+| Приложение | Built-in night-light launch, USB port, reconnect, launch at login, hidden startup, off-on-quit, appearance, permissions and log |
 
 Appearance offers **Как в macOS** (follow macOS), **Тёмное** (dark) and **Светлое** (light). System mode follows macOS after either manual theme; the light theme pairs a bright amber accent with dark labels for readability.
 
@@ -154,6 +164,8 @@ rtk proxy python3 package.py
 Packaging creates ZIP, DMG and `SHA256SUMS` under `build/distribution/`, with the app, both installation guides, MIT license, offline lighting test and a file-hash manifest. It verifies ZIP extraction, extracted signatures and DMG integrity. `--skip-dmg` makes only ZIP; `--verify-mount` additionally checks mounted image contents when macOS permits it. Packaging never uploads or submits to Apple.
 
 For Developer ID signing and notarization preparation, see [distribution documentation](DISTRIBUTION.md). Version and build are in `VERSION.json`; application code is in `Source/`, resources in `Resources/` and additional tests in `Tests/`.
+
+The night light compiles from `Source/Ambient/` into the same Glowline executable; `Resources/Noctiluca.metal` is bundled. To inspect the UI and GPU without a second strip controller, use `rtk python3 build.py --output-app /tmp/GlowlineReview.app --ambient-review`. This build has separate state and does not change live profiles, permissions or login registration. Build a regular candidate with `--output-app /tmp/GlowlineCandidate.app`, then package it using `rtk python3 package.py --app /tmp/GlowlineCandidate.app --output-dir /tmp/GlowlinePackages --skip-dmg`. Run GPU diagnostics without starting the controller with `rtk /tmp/GlowlineCandidate.app/Contents/MacOS/Glowline --ambient-benchmark /tmp/GlowlineGPU`; it writes PNGs and a JSON report of GPU time, which differs from window FPS.
 
 ## Verification limits
 

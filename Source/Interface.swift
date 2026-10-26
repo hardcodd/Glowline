@@ -34,6 +34,7 @@ private let modeIcons = ["display", "lightbulb", "rectangle.fill.on.rectangle.fi
 
 struct RootView: View {
     @ObservedObject var model: AppModel
+    var openAmbient: () -> Void = {}
     @Environment(\.colorScheme) private var scheme
     private var accentText: Color { scheme == .dark ? amber : .primary }
     private var canvas: Color { scheme == .dark ? Color(red: 0.065, green: 0.071, blue: 0.086) : Color(nsColor: .windowBackgroundColor) }
@@ -332,6 +333,12 @@ struct RootView: View {
     }
     private var appPage: some View {
         VStack(spacing: 20) {
+            card("ambient.title", icon: "moon.stars") {
+                Text(tr("ambient.description")).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button(action: openAmbient) { Label(tr("ambient.open"), systemImage: "play.fill") }
+                    .accessibilityIdentifier("ambient.open")
+                Text(tr("ambient.stripHelp")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             card("app.startup", icon: "power") {
                 Toggle(tr("control.login"), isOn: $model.settings.launchAtLogin)
                 Text(model.loginStatus).font(.caption).foregroundStyle(.secondary)
@@ -361,7 +368,7 @@ struct RootView: View {
                     LabeledContent(tr("stat.frames"), value: String(s.framesSent))
                     LabeledContent(tr("stat.capture"), value: "\(s.captureAccepted) / \(s.captureReceived)")
                 }
-                HStack { Button(tr("diagnostics.logs")) { model.openLogs() }; Button(tr("diagnostics.files")) { model.openDataFolder() }; Spacer(); Text("Glowline 1.0.0").font(.caption).foregroundStyle(.secondary) }
+                HStack { Button(tr("diagnostics.logs")) { model.openLogs() }; Button(tr("diagnostics.files")) { model.openDataFolder() }; Spacer(); Text("Glowline " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")).font(.caption).foregroundStyle(.secondary) }
                 Text(tr("diagnostics.privacy")).font(.caption).foregroundStyle(.secondary)
             }
         }

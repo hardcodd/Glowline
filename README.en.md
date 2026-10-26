@@ -2,17 +2,17 @@
 
 Glowline syncs a **Skydimo SK0L34 USB backlight with 112 LEDs** to colors at the edges of your screen. It runs in the macOS menu bar with a Russian interface and local settings.
 
-**[Download Glowline 1.1.0](https://github.com/hardcodd/Glowline/releases/latest)** · [User guide](docs/USER-GUIDE.en.md) · [Русский](README.md)
+**[Download Glowline 1.2.0 for macOS](https://github.com/hardcodd/Glowline/releases/latest)** · [User guide](docs/USER-GUIDE.en.md) · [Русский](README.md)
 
 ![Glowline interface: lighting preview, brightness and warmth](docs/images/glowline-macos-ambient-lighting.png)
 
-*Version 1.0.0 screenshot. Version 1.1.0 adds a Schedule page. The outline previews transmitted colors.*
+*Version 1.2.0 includes scheduling, nine lighting modes and the built-in night light. The outline previews transmitted colors.*
 
-## Requirements
+## macOS requirements
 
 An **Apple Silicon Mac running macOS 15+**, a **Skydimo SK0L34 USB controller** and the fixed **112-LED** strip layout. Intel Macs and other models/lengths are unsupported. One physical setup has been tested; see the [compatibility guide](docs/USER-GUIDE.en.md#compatible-led-strip).
 
-## Quick start
+## macOS quick start
 
 1. Download ZIP or DMG and copy `Glowline.app` to `~/Applications/`.
 2. Open the app. If macOS blocks it, follow the [installation guide](docs/INSTALL.md#first-launch-without-an-apple-developer-id-certificate): this release uses ad-hoc signing without Apple notarization.
@@ -23,9 +23,10 @@ Closing the window keeps lighting running. Reopen settings through the menu-bar 
 
 ## Features
 
-The features below describe the current source. Fire, Comet, Aurora and per-effect controls are not yet included in the published 1.1.0 release.
+Version 1.2.0 includes the following features.
 
 - **Nine modes:** screen, solid, gradient, breathing, rainbow, candle, fire, comet and aurora.
+- **Built-in Noctiluca night light on macOS:** fullscreen fiery stars and colorful nebulae rendered with Metal. Launch it from the Glowline menu or the App page, with no browser or separate installation.
 - **Color and warmth:** brightness, saturation, gamma and per-side correction.
 - **Color detail:** switch between dominant-hue sampling and standard averaging.
 - **Brightness schedule:** editable day/night start times and brightness, easy to adjust seasonally. Disabled by default.
@@ -37,7 +38,7 @@ Current settings **save automatically**, including across a complete quit. Profi
 
 ## Guides and help
 
-[Full user guide](docs/USER-GUIDE.en.md) · [Installation and updates](docs/INSTALL.md) · [What's new in 1.1.0](docs/RELEASE-1.1.0.md) · [Report an issue](https://github.com/hardcodd/Glowline/issues)
+[Full user guide](docs/USER-GUIDE.en.md) · [Installation and updates](docs/INSTALL.md) · [What's new in 1.2.0](docs/RELEASE-1.2.0.md) · [Report an issue](https://github.com/hardcodd/Glowline/issues)
 
 Download and open the offline [lighting test](docs/lighting-test.html) in a browser to compare colors on any aspect ratio, including ultrawide monitors. `F` toggles fullscreen, Space pauses and `H` hides controls.
 

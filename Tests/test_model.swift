@@ -9,7 +9,7 @@ import AppKit
     let fresh = AppModel(stateDirectory: directory.appendingPathComponent("fresh"), inspectSystem: false)
     precondition(fresh.settings.port.isEmpty && fresh.profiles.isEmpty && fresh.notice.isEmpty)
     var trackingTicks = 0
-    _ = NSApplication.shared
+    // Exercise a cold run loop too: CLI self-tests do not launch NSApplication.
     let trackingTimer = statusPollingTimer { trackingTicks += 1 }
     defer { trackingTimer.invalidate() }
     let trackingDeadline = Date().addingTimeInterval(1.2)

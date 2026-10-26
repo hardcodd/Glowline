@@ -35,21 +35,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verify-mount", action="store_true", help="Also mount the DMG read-only and compare its files (requires disk-image access)")
     parser.add_argument("--skip-dmg", action="store_true", help="Create only ZIP (for CI without disk-image support)")
+    parser.add_argument("--app", type=Path, help="Package an isolated Glowline candidate bundle")
+    parser.add_argument("--output-dir", type=Path, help="Write local packages to this directory")
     args = parser.parse_args()
     if args.skip_dmg and args.verify_mount:
         parser.error("--verify-mount requires DMG creation")
     root = Path(__file__).resolve().parent
-    app = root / "Glowline.app"
+    app = args.app.resolve() if args.app else root / "Glowline.app"
     version = json.loads((root / "VERSION.json").read_text())
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     if (info["CFBundleIdentifier"], info["CFBundleShortVersionString"], info["CFBundleVersion"]) != ("local.alex.Glowline", version["version"], str(version["build"])):
         raise SystemExit("Rebuild the application with the current VERSION.json before packaging")
     run("codesign", "--verify", "--deep", "--strict", app)
     # Only known bundle paths may enter a distribution. Never package local data.
-    allowed = {"Contents/Info.plist", "Contents/MacOS/Glowline", "Contents/MacOS/GlowlineEngine", "Contents/Resources/AppIcon.icns", "Contents/Resources/ru.lproj/Localizable.strings", "Contents/_CodeSignature/CodeResources"}
+    allowed = {"Contents/Info.plist", "Contents/MacOS/Glowline", "Contents/MacOS/GlowlineEngine", "Contents/Resources/AppIcon.icns", "Contents/Resources/Noctiluca.metal", "Contents/Resources/ru.lproj/Localizable.strings", "Contents/_CodeSignature/CodeResources"}
     if set(files(app)) != allowed:
         raise SystemExit("Unexpected or missing application bundle files")
-    output = root / "build/distribution"
+    output = args.output_dir.resolve() if args.output_dir else root / "build/distribution"
     output.mkdir(parents=True, exist_ok=True)
     name = f"Glowline-{version['version']}-build{version['build']}-arm64"
     archive = output / (name + ".zip")
@@ -78,17 +80,18 @@ def main() -> None:
             run("hdiutil", "create", "-srcfolder", staging, "-volname", "Glowline", "-format", "UDZO", image)
             run("hdiutil", "verify", image)
             if args.verify_mount:
-                mount = Path(temporary) / "mounted"
-                mount.mkdir()
-                run("hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", mount, image)
-                try:
-                    for relative, checksum in expected.items():
-                        candidate = mount / relative
-                        if not candidate.is_file() or digest(candidate) != checksum:
-                            raise SystemExit("Disk image content mismatch: " + relative)
-                    run("codesign", "--verify", "--deep", "--strict", mount / "Glowline.app")
-                finally:
-                    run("hdiutil", "detach", mount)
+                # macOS can reject mount points on external project volumes.
+                with tempfile.TemporaryDirectory(prefix="glowline-dmg-") as mount_directory:
+                    mount = Path(mount_directory)
+                    run("hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", mount, image)
+                    try:
+                        for relative, checksum in expected.items():
+                            candidate = mount / relative
+                            if not candidate.is_file() or digest(candidate) != checksum:
+                                raise SystemExit("Disk image content mismatch: " + relative)
+                        run("codesign", "--verify", "--deep", "--strict", mount / "Glowline.app")
+                    finally:
+                        run("hdiutil", "detach", mount)
             artifacts.append(image)
         checksums = "".join(f"{digest(path)}  {path.name}\n" for path in artifacts)
         (output / "SHA256SUMS").write_text(checksums)

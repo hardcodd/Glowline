@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and locally sign the native Apple Silicon application with the installed SDK."""
 from pathlib import Path
-import subprocess, shutil, plistlib, json, argparse
+import subprocess, shutil, plistlib, json, argparse, os
 from typing import Union
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--sign-identity", default="-", help="Developer ID identity, or '-' for a local ad-hoc build")
@@ -63,5 +63,13 @@ if args.sign_identity != "-":
 run(*signing, "--identifier", "local.alex.Glowline.engine", macos/"GlowlineEngine")
 run(*signing, "--identifier", info["CFBundleIdentifier"], app)
 run("codesign", "--verify", "--deep", "--strict", app)
-run(macos/"Glowline", "--self-test")
+try:
+    run(macos/"Glowline", "--self-test")
+except subprocess.CalledProcessError:
+    # Optimized Swift traps can omit assertion text; retain a CI stack without hiding failure.
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        subprocess.run(["rtk", "proxy", "xcrun", "lldb", "--batch", "--no-lldbinit",
+                        "--one-line", "run", "--one-line-on-crash", "thread backtrace all",
+                        "--", str(macos/"Glowline"), "--self-test"], timeout=60, check=False)
+    raise
 print(f"Built: {app}")

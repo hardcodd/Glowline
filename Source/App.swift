@@ -103,7 +103,7 @@ import Combine
 @main struct GlowlineMain {
     @MainActor static func main() {
         if CommandLine.arguments.contains("--self-test") {
-            do { try runSettingsTests(); try runStatusTests(); runRecoveryTests(); try runModelTests(); runAppearanceTests(); runAmbientMotionTests(); try runAmbientIsolationTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
+            do { try runSettingsTests(); try runStatusTests(); runRecoveryTests(); try runModelTests(); try runAppearanceTests(); runAmbientMotionTests(); try runAmbientIsolationTests() } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }; return
         }
         if let index = CommandLine.arguments.firstIndex(of: "--ambient-benchmark") {
             do {

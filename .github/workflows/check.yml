@@ -40,3 +40,29 @@ jobs:
         run: rtk proxy xcrun clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Werror -Wno-unused-function -I Source/Engine Tests/test_sampling.c -o build/test-sampling-sanitized
       - name: Run sampling sanitizer checks
         run: rtk proxy ./build/test-sampling-sanitized
+      - name: Compile portable Windows pipeline sanitizer checks
+        run: rtk proxy xcrun clang -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Werror -Wno-unused-function Source/Windows/core.c Tests/test_windows_core.c -o build/test-windows-core-sanitized
+      - name: Run portable Windows pipeline sanitizer checks
+        run: rtk proxy ./build/test-windows-core-sanitized
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Build Windows 11 x64 and run offline contracts
+        shell: pwsh
+        run: ./build-windows.ps1
+      - name: Verify Windows ZIP and extracted executable
+        shell: pwsh
+        run: ./package-windows.ps1
+      - name: Retain Windows candidate for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Glowline-Windows-11-x64
+          path: |
+            Releases/*-Windows-11-x64.zip
+            Releases/*-Windows-11-x64.zip.sha256
+          if-no-files-found: error

@@ -1,8 +1,8 @@
-# Glowline — monitor ambient lighting for macOS
+# Glowline — monitor ambient lighting for macOS and Windows 11
 
 Glowline syncs a **Skydimo SK0L34 USB backlight with 112 LEDs** to colors at the edges of your screen. It runs in the macOS menu bar with a Russian interface and local settings.
 
-**[Download Glowline 1.2.0 for macOS](https://github.com/hardcodd/Glowline/releases/latest)** · [User guide](docs/USER-GUIDE.en.md) · [Русский](README.md)
+**[Download Glowline 1.2.0 for macOS](https://github.com/hardcodd/Glowline/releases/latest)** · [Windows 11 x64](docs/WINDOWS.md) · [User guide](docs/USER-GUIDE.en.md) · [Русский](README.md)
 
 ![Glowline interface: lighting preview, brightness and warmth](docs/images/glowline-macos-ambient-lighting.png)
 
@@ -20,6 +20,10 @@ An **Apple Silicon Mac running macOS 15+**, a **Skydimo SK0L34 USB controller** 
 4. For **Экран** (Screen) mode, grant Screen Recording in macOS settings. Other modes need no screen access.
 
 Closing the window keeps lighting running. Reopen settings through the menu-bar icon; quit completely with **Command-Q**.
+
+## Windows 11 x64
+
+A separate port for AMD and Intel provides a Russian interface, nine modes, scheduling and profiles. It builds from the current source and has not been published in releases. It requires Windows 11 and the same SK0L34 / 112-LED controller. [Run, build and verification limits](docs/WINDOWS.md).
 
 ## Features
 

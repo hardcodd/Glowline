@@ -1,8 +1,8 @@
-# Glowline — подсветка монитора для macOS
+# Glowline — подсветка монитора для macOS и Windows 11
 
 Glowline подстраивает подсветку **Skydimo SK0L34 на 112 светодиодов** под цвета по краям экрана. Работает из строки меню macOS, с русским интерфейсом и локальными настройками.
 
-**[Скачать Glowline 1.2.0 для macOS](https://github.com/hardcodd/Glowline/releases/latest)** · [Руководство](РУКОВОДСТВО.md) · [English](README.en.md)
+**[Скачать Glowline 1.2.0 для macOS](https://github.com/hardcodd/Glowline/releases/latest)** · [Windows 11 x64](docs/WINDOWS.ru.md) · [Руководство](РУКОВОДСТВО.md) · [English](README.en.md)
 
 ![Интерфейс Glowline: предпросмотр подсветки, яркость и теплота](docs/images/glowline-macos-ambient-lighting.png)
 
@@ -20,6 +20,10 @@ Mac с **Apple Silicon и macOS 15+**, USB-контроллер **Skydimo SK0L34
 4. Для режима **Экран** разрешите запись экрана в настройках macOS. Остальные режимы работают без этого доступа.
 
 Закрытие окна оставляет подсветку работающей. Настройки открываются через значок Glowline в строке меню; полный выход — **Command-Q**.
+
+## Windows 11 x64
+
+Для AMD и Intel подготовлен отдельный порт с русским интерфейсом, девятью режимами, расписанием и профилями. Он собирается из текущих исходников и ещё не опубликован в релизах. Нужны Windows 11 и тот же контроллер SK0L34 на 112 LED. [Запуск, сборка и ограничения проверки](docs/WINDOWS.ru.md).
 
 ## Что умеет
 

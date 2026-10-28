@@ -1,0 +1,4 @@
+#include <windows.h>
+1 RT_MANIFEST "Source/Windows/app.manifest"
+1 ICON "Source/Windows/AppIcon.ico"
+2 RCDATA "Resources/ru.lproj/Localizable.strings"

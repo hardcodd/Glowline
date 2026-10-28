@@ -52,17 +52,18 @@ final class ParticleEmitter {
                     ? vent * (style == .comet ? 0.18 : 0.62) + pulse * 0.22
                     : (random.x * 2 - 1) * 0.90
                 let rearY = sqrt(max(0, 1 - cross * cross))
-                let point =
-                    source
-                    + (across * cross + rear * rearY
-                        + normal * (random.w - 0.5) * 0.35) * body.worldRadius
+                let sideOffset: SIMD3<Float> = across * cross
+                let rearOffset: SIMD3<Float> = rear * rearY
+                let depthOffset: SIMD3<Float> = normal * (random.w - 0.5) * 0.35
+                let surfaceOffset: SIMD3<Float> = (sideOffset + rearOffset + depthOffset) * body.worldRadius
+                let point: SIMD3<Float> = source + surfaceOffset
                 if point.y <= terrain.height(at: SIMD2(point.x, point.z)) { continue }
                 let fan: Float =
                     style == .comet
                     ? cross * (stream ? 0.07 : 0.12)
                     : cross * (ember ? 0.20 : 0.065)
                 let flow: Float = style == .plasma ? 0.19 : style == .comet ? 0.12 : 0.065
-                let velocity =
+                let velocity: SIMD3<Float> =
                     (rear * flow * (0.75 + random.y * 0.65)
                         + across * (fan + pulse * 0.025)
                         + normal

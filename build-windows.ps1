@@ -11,11 +11,21 @@ if (!$installation) { throw 'C++ Build Tools were not found.' }
 # Use the x64 host tools as well on Windows ARM's x64 emulation.
 $nativeArchitecture = $env:PROCESSOR_ARCHITECTURE
 $hostArchitecture = 'x64'
-$developerCommand = '""{0}\Common7\Tools\VsDevCmd.bat" -no_logo -arch=x64 -host_arch={1} >nul && set"' -f $installation, $hostArchitecture
-& cmd.exe /d /s /c $developerCommand | ForEach-Object {
-    if ($_ -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
-}
-if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize x64 build environment.' }
+# A batch file keeps cmd.exe quoting separate from PowerShell's native argument marshalling.
+$environmentScript = Join-Path $output 'initialize-build.cmd'
+$environmentCommands = @(
+    '@echo off'
+    ('call "{0}\Common7\Tools\VsDevCmd.bat" -no_logo -arch=x64 -host_arch={1} >nul' -f $installation, $hostArchitecture)
+    'if errorlevel 1 exit /b %errorlevel%'
+    'set'
+) -join "`r`n"
+[IO.File]::WriteAllText($environmentScript, $environmentCommands + "`r`n", [Text.Encoding]::ASCII)
+try {
+    & cmd.exe /d /c $environmentScript | ForEach-Object {
+        if ($_ -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+    }
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize x64 build environment.' }
+} finally { Remove-Item -LiteralPath $environmentScript -Force }
 $compilerCandidates = @("$installation\VC\Tools\Llvm\x64\bin\clang-cl.exe", "$installation\VC\Tools\Llvm\bin\clang-cl.exe") | Where-Object { Test-Path $_ }
 if ($nativeArchitecture -eq 'ARM64' -and (Test-Path "$installation\VC\Tools\Llvm\ARM64\bin\clang-cl.exe")) {
     $compilerCandidates = @("$installation\VC\Tools\Llvm\ARM64\bin\clang-cl.exe") + $compilerCandidates

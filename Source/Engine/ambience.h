@@ -60,9 +60,9 @@ static void sample_edge_grid_mode(const uint8_t *pixels,size_t fw,size_t fh,size
    double weight=fmax(0,1-((double)d+.5)/(extent*depth));if(weight<=0)continue;
    for(size_t a=first;a<last;a++){
     size_t x=horizontal?a:(col==0?d:fw-1-d),y=horizontal?(row==0?d:fh-1-d):a;
-    _Float16 rgba[4];memcpy(rgba,pixels+y*stride+x*8,sizeof(rgba));
+    const uint8_t *rgba=pixels+y*stride+x*8;
     double rgb[3]={0};
-    for(int c=0;c<3;c++){float v=rgba[c];if(isfinite(v)&&v>0){sums[c]+=v*weight;rgb[c]=v;}}
+    for(int c=0;c<3;c++){float v=glowline_half_to_float(rgba+c*2);if(isfinite(v)&&v>0){sums[c]+=v*weight;rgb[c]=v;}}
     if(detail){detail_vote(buckets,rgb,weight);peakSum+=fmax(rgb[0],fmax(rgb[1],rgb[2]))*weight;}
     weightSum+=weight;
    }

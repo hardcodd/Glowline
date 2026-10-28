@@ -1,5 +1,6 @@
 #pragma once
 #include "rgb.h"
+#include "half.h"
 #include <math.h>
 #include <string.h>
 
@@ -21,7 +22,7 @@ static void sample_linear_grid(const uint8_t *pixels,size_t fw,size_t fh,size_t 
   if(!pixels||!fw||!fh||!width||!height||stride<fw*8||i>=width*height){out[i]=(GlowlineRGB){0,0,0};continue;}
   size_t x=((2*(i%width)+1)*fw)/(2*width),y=((2*(i/width)+1)*fh)/(2*height);
   if(x>=fw)x=fw-1;if(y>=fh)y=fh-1;
-  _Float16 rgba[4];memcpy(rgba,pixels+y*stride+x*8,sizeof(rgba));
-  out[i]=(GlowlineRGB){linear_to_srgb8(rgba[0]),linear_to_srgb8(rgba[1]),linear_to_srgb8(rgba[2])};
+  const uint8_t *rgba=pixels+y*stride+x*8;
+  out[i]=(GlowlineRGB){linear_to_srgb8(glowline_half_to_float(rgba)),linear_to_srgb8(glowline_half_to_float(rgba+2)),linear_to_srgb8(glowline_half_to_float(rgba+4))};
  }
 }

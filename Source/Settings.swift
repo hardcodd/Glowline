@@ -105,6 +105,7 @@ struct Settings: Codable, Equatable {
     var blackThreshold = 0.0
     var edgeDepth = 0.15
     var detailMode = false
+    var earlyResponse = false
     var releaseSeconds = 0.18
     var attackSeconds = 0.0
     var mirrored = true
@@ -140,6 +141,7 @@ struct Settings: Codable, Equatable {
     var offOnQuit = true
 
     private enum CodingKeys: String, CodingKey {
+        case earlyResponse
         case effectSettings, enabled, mode, brightness, brightnessSchedule, warmth, saturation, gamma, redGain, greenGain, blueGain, blackThreshold, edgeDepth, detailMode, releaseSeconds, attackSeconds, mirrored, offset, leftEnabled, topEnabled, rightEnabled, bottomEnabled, leftGain, topGain, rightGain, bottomGain, fps, captureFps, keepaliveSeconds, skipUnchanged, primary, secondary, speed, reverse, port, displayID, theme, launchAtLogin, startHidden, reconnect, offOnQuit
     }
     init() {}
@@ -160,6 +162,7 @@ struct Settings: Codable, Equatable {
         if values.contains(.blackThreshold) { blackThreshold = try values.decode(Double.self, forKey: .blackThreshold) }
         if values.contains(.edgeDepth) { edgeDepth = try values.decode(Double.self, forKey: .edgeDepth) }
         if values.contains(.detailMode) { detailMode = try values.decode(Bool.self, forKey: .detailMode) }
+        if values.contains(.earlyResponse) { earlyResponse = try values.decode(Bool.self, forKey: .earlyResponse) }
         if values.contains(.releaseSeconds) { releaseSeconds = try values.decode(Double.self, forKey: .releaseSeconds) }
         if values.contains(.attackSeconds) { attackSeconds = try values.decode(Double.self, forKey: .attackSeconds) }
         if values.contains(.mirrored) { mirrored = try values.decode(Bool.self, forKey: .mirrored) }
@@ -297,6 +300,14 @@ func runSettingsTests() throws {
     }
     precondition(defaults.warmth == 0.5 && defaults.mirrored && defaults.brightness == 1)
     precondition(!defaults.detailMode)
+    precondition(!defaults.earlyResponse)
+    var reactive = defaults; reactive.earlyResponse = true
+    let reactiveState = SavedState(settings: reactive, profiles: [Profile(name: "Early", settings: reactive)])
+    let reactiveRestored = try SavedState.decode(JSONEncoder().encode(reactiveState))
+    precondition(reactiveRestored.settings == reactive && reactiveRestored.profiles[0].settings == reactive)
+    let reactivePayload = try JSONSerialization.jsonObject(with: reactive.engineData()) as! [String: Any]
+    precondition((reactivePayload["earlyResponse"] as? Bool) == true)
+    do { _ = try Settings.decodeMerged(Data("{\"earlyResponse\":\"bad\"}".utf8)); preconditionFailure("Invalid earlyResponse accepted") } catch {}
     var detailed = defaults; detailed.detailMode = true; detailed.saturation = 0.396591796875
     let detailRoundtrip = try Settings.decodeMerged(JSONEncoder().encode(detailed))
     precondition(detailRoundtrip == detailed)
@@ -320,6 +331,7 @@ func runSettingsTests() throws {
     precondition(legacyState.settings.brightness == 0.37 && legacyState.settings.warmth == 0.5)
     precondition(legacyState.profiles[0].settings.warmth == 0.8 && legacyState.profiles[0].settings.port.isEmpty)
     precondition(!legacyState.settings.detailMode && !legacyState.profiles[0].settings.detailMode)
+    precondition(!legacyState.settings.earlyResponse && !legacyState.profiles[0].settings.earlyResponse)
     let detailSaved = SavedState(settings: detailed, profiles: [Profile(name: "Detail", settings: detailed)])
     let detailRestored = try SavedState.decode(JSONEncoder().encode(detailSaved))
     precondition(detailRestored.settings == detailed && detailRestored.profiles[0].settings == detailed)

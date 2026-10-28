@@ -209,6 +209,15 @@ struct RootView: View {
             .environment(\.timeZone, zone).environment(\.locale, Locale(identifier: "ru_RU"))
             .accessibilityIdentifier(key)
     }
+    private var earlyResponseControl: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(tr("control.earlyResponse"), isOn: $model.settings.earlyResponse)
+                .accessibilityIdentifier("control.earlyResponse")
+            Text(tr("help.earlyResponse")).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var capturePage: some View {
         VStack(spacing: 20) {
             card("capture.area", icon: "viewfinder") {
@@ -217,6 +226,7 @@ struct RootView: View {
                 Text(tr("help.detailMode")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 settingSlider("control.depth", value: $model.settings.edgeDepth, range: 0...0.35, format: percent, help: "help.depth")
                 DepthPreview(depth: model.settings.edgeDepth)
+                earlyResponseControl
                 settingSlider("control.release", value: $model.settings.releaseSeconds, range: 0...1, step: 0.001, format: milliseconds, help: "help.release")
                 settingSlider("control.attack", value: $model.settings.attackSeconds, range: 0...1, step: 0.001, format: milliseconds, help: "help.attack")
             }
@@ -254,6 +264,7 @@ struct RootView: View {
             Text(tr("help.detailMode")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             settingSlider("control.depth", value: $model.settings.edgeDepth, range: 0...0.35, format: percent, help: "help.depth")
             DepthPreview(depth: model.settings.edgeDepth)
+            earlyResponseControl
         case 1:
             effectColors(secondary: false)
         case 2:

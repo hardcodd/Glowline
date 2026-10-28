@@ -3,7 +3,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreVideo/CoreVideo.h>
 #import <os/lock.h>
-#include "ambience.h"
+#include "early_response.h"
 #include "latency.h"
 #include <mach/mach_time.h>
 
@@ -19,6 +19,7 @@
 @property(nonatomic,strong) NSCondition *frameCondition;
 @property(atomic) double edgeDepth;
 @property(atomic) BOOL detailMode;
+@property(atomic) BOOL earlyResponse;
 @property(nonatomic) uint32_t displayID;
 @property(atomic) BOOL ready;
 @property(atomic) uint64_t receivedFrames;
@@ -100,7 +101,7 @@
  os_unfair_lock_lock(&_lock);CVPixelBufferRef pixel=_latest;if(pixel)CVPixelBufferRetain(pixel);if(timing)*timing=_timing;os_unfair_lock_unlock(&_lock);
  if(!pixel){memset(out,0,count*sizeof(*out));return;}
  if(CVPixelBufferLockBaseAddress(pixel,kCVPixelBufferLock_ReadOnly)==kCVReturnSuccess){
-  sample_edge_grid_mode(CVPixelBufferGetBaseAddress(pixel),CVPixelBufferGetWidth(pixel),CVPixelBufferGetHeight(pixel),CVPixelBufferGetBytesPerRow(pixel),self.width,self.height,out,count,self.edgeDepth,self.detailMode);
+  sample_reactive_edge_grid(CVPixelBufferGetBaseAddress(pixel),CVPixelBufferGetWidth(pixel),CVPixelBufferGetHeight(pixel),CVPixelBufferGetBytesPerRow(pixel),self.width,self.height,out,count,self.edgeDepth,self.detailMode,self.earlyResponse);
   CVPixelBufferUnlockBaseAddress(pixel,kCVPixelBufferLock_ReadOnly);
  }
  CVPixelBufferRelease(pixel);

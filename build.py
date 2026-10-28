@@ -53,6 +53,8 @@ run("xcrun", "clang", "-O2", "-Wall", "-Werror", "-Wno-unused-function", "-I", s
 run(work/"test-controls")
 run("xcrun", "clang", "-O2", "-Wall", "-Werror", "-Wno-unused-function", "-I", source/"Engine", root/"Tests/test_sampling.c", "-o", work/"test-sampling")
 run(work/"test-sampling")
+run("xcrun", "clang", "-O2", "-Wall", "-Werror", "-Wno-unused-function", "-I", source/"Engine", root/"Tests/test_early_response.c", "-o", work/"test-early-response")
+run(work/"test-early-response")
 run("xcrun", "clang", "-O2", "-Wall", "-Werror", "-I", source/"Engine", root/"Tests/test_controller.c", "-o", work/"test-controller")
 run(work/"test-controller")
 run("xcrun", "clang", "-fobjc-arc", "-O2", "-Wall", "-Werror", "-Wno-unused-function", "-mmacosx-version-min=15.0", "-I", source/"Engine", "-framework", "Foundation", "-framework", "ScreenCaptureKit", "-framework", "CoreGraphics", "-framework", "CoreMedia", "-framework", "CoreVideo", root/"Tests/test_capture.m", "-o", work/"test-capture")

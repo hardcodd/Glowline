@@ -31,6 +31,30 @@ int main(void) { @autoreleasepool {
     [capture render:colors count:731];
     assert(colors[0].r==255 && colors[0].g==255 && colors[0].b==255);
     CFRelease(sample);CFRelease(format);CVPixelBufferRelease(pixel);
+    // Render the same retained interior highlight before/after a live toggle.
+    assert(CVPixelBufferCreate(kCFAllocatorDefault,344,144,kCVPixelFormatType_64RGBAHalf,NULL,&pixel)==kCVReturnSuccess);
+    assert(CVPixelBufferLockBaseAddress(pixel,0)==kCVReturnSuccess);
+    uint8_t *base=CVPixelBufferGetBaseAddress(pixel);
+    size_t stride=CVPixelBufferGetBytesPerRow(pixel);
+    memset(base,0,stride*144);
+    for(size_t y=40;y<48;y++)for(size_t x=160;x<168;x++) {
+        _Float16 rgba[4]={0,0,1,1};memcpy(base+y*stride+x*8,rgba,sizeof(rgba));
+    }
+    CVPixelBufferUnlockBaseAddress(pixel,0);
+    assert(CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault,pixel,&format)==noErr);
+    assert(CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault,pixel,format,&timing,&sample)==noErr);
+    attachments=(__bridge NSArray *)CMSampleBufferGetSampleAttachmentsArray(sample,YES);
+    info=attachments.firstObject;info[SCStreamFrameInfoStatus]=@(SCFrameStatusComplete);
+    info[SCStreamFrameInfoDisplayTime]=@(mach_absolute_time());
+    [capture stream:capture.stream didOutputSampleBuffer:sample ofType:SCStreamOutputTypeScreen];
+    capture.edgeDepth=.15;
+    assert(!capture.earlyResponse);
+    [capture render:colors count:731];assert(colors[20].b==0);
+    capture.earlyResponse=YES;
+    [capture render:colors count:731];assert(colors[20].b>0 && colors[20].r==0);
+    capture.earlyResponse=NO;
+    [capture render:colors count:731];assert(colors[20].b==0);
+    CFRelease(sample);CFRelease(format);CVPixelBufferRelease(pixel);
     [capture stream:capture.stream didStopWithError:[NSError errorWithDomain:@"GlowlineTest" code:1 userInfo:nil]];
     assert(capture.failed && !capture.ready);
     memset(colors, 255, sizeof(colors));

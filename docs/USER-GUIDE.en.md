@@ -123,6 +123,8 @@ After a capture error, old screen colors are cleared and the app reports the fai
 
 Download and open the offline [lighting test](lighting-test.html) in a browser. It fits any aspect ratio, including ultrawide. `F` toggles fullscreen, `H` hides controls, Space pauses and `1`–`6` select scenes.
 
+**Ранняя реакция** (Early response) is an experimental switch on the capture page and the Screen effect panel. It adds a faint highlight signal from objects up to halfway into the image from each edge, fading toward the center. Tangential zone boundaries stay unchanged. Existing edge light is not dimmed and uniform fills are not boosted; mixed scenes may become brighter and shift a zone's hue. Black threshold and color correction still apply and may suppress faint signals. The depth diagram shows the primary capture area without this extra signal. At zero depth the experiment has no effect. It defaults to off, including in older profiles; it switches live and is included when saving a profile. It changes sampling rather than physical LED count or controller speed.
+
 ## Profiles, updates and privacy
 
 Settings, profiles and bounded diagnostic files are stored locally in `~/Library/Application Support/Glowline/`, separately from the app. Screen images and audio are not saved or uploaded. Glowline has no account requirement or cloud service.

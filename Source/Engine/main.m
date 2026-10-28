@@ -87,6 +87,7 @@ int main(int argc,const char *argv[]){@autoreleasepool{
      if([tuning[@"releaseSeconds"] isKindOfClass:[NSNumber class]])releaseSeconds=fmin(1,fmax(0,[tuning[@"releaseSeconds"] doubleValue]));
      capture.edgeDepth=edgeDepth;
      if([tuning[@"detailMode"] isKindOfClass:[NSNumber class]])capture.detailMode=[tuning[@"detailMode"] boolValue];
+     capture.earlyResponse=[tuning[@"earlyResponse"] isKindOfClass:[NSNumber class]] && [tuning[@"earlyResponse"] boolValue];
      controls.warmth=warmth;
      if([tuning[@"enabled"] isKindOfClass:[NSNumber class]])controls.enabled=[tuning[@"enabled"] boolValue];
      if([tuning[@"mode"] isKindOfClass:[NSNumber class]])controls.mode=MAX(0,MIN(GLOWLINE_MODE_COUNT-1,[tuning[@"mode"] intValue]));
@@ -181,7 +182,8 @@ int main(int argc,const char *argv[]){@autoreleasepool{
     NSMutableArray *colors=[NSMutableArray arrayWithCapacity:112];
     for(size_t i=0;i<112;i++)[colors addObject:@[@(packet[6+i*3]),@(packet[7+i*3]),@(packet[8+i*3])]];
     NSDictionary *state=@{@"edgeDepth":@(edgeDepth),@"detailMode":@(capture.detailMode),@"warmth":@(warmth),@"releaseSeconds":@(releaseSeconds),@"keepaliveSeconds":@(keepaliveSeconds),@"captureReceived":@(capture.receivedFrames),@"captureFuture":@(capture.futureFrames),@"captureAccepted":@(capture.acceptedFrames),@"sampleCalls":@(windowSamples),@"freshSamples":@(windowFresh),@"duplicateSkips":@(windowDuplicates),@"duplicateWaitMs":@(duplicateWaitTotal*1000),@"pacingWaitMs":@(pacingWaitTotal*1000),@"samplingTotalMs":@(sampleTotal),@"windowSeconds":@(now-windowStart),@"effect":captureOnly?@"srgb_capture_verification":@"srgb_capture_standalone",@"captureColorSpace":@"extended-linear-sRGB",@"captureDynamicRange":@"canonicalHDR",@"pid":@(getpid()),@"serialVerified":@(!captureOnly),@"fps":captureOnly?@0:@(windowFrames/(now-windowStart)),@"averageFps":captureOnly?@0:@(total/(now-started)),@"brightness":@(controls.brightness*100),@"mirrored":@(controls.mirrored),@"mode":@(controls.mode),@"enabled":@(controls.enabled),@"captureReady":@(capture.ready&&!capture.failed),@"captureFailed":@(capture.failed),@"captureError":capture.errorMessage?:@"",@"displayID":@(capture.displayID),@"framesRendered":@(total),@"framesSent":captureOnly?@0:@(total),@"targetFps":@(targetFps),@"captureFps":@(captureRate),@"skipUnchanged":@(skipUnchanged),@"drainEvery":@(drainEvery),@"queueSupported":@(queueSupported),@"maxQueuedBytes":@(maxQueued),@"drainMaxMs":@(drainMaxMs),@"drains":@(drains),@"drainEach":@(drainEach),@"queueLimit":@(queueLimit),@"baud":@115200,@"writeMs":@(writeTotal/windowFrames*1000),@"timestamp":@([[NSDate date]timeIntervalSince1970]),@"colors":colors};
-    NSData *data=[NSJSONSerialization dataWithJSONObject:state options:0 error:nil];[data writeToFile:statusPath options:NSDataWritingAtomic error:nil];windowFrames=0;windowSamples=0;windowFresh=0;windowDuplicates=0;sampleTotal=0;duplicateWaitTotal=0;pacingWaitTotal=0;windowStart=now;writeTotal=0;maxQueued=0;drainMaxMs=0;drains=0;
+    NSMutableDictionary *reported=[state mutableCopy];reported[@"earlyResponse"]=@(capture.earlyResponse);
+    NSData *data=[NSJSONSerialization dataWithJSONObject:reported options:0 error:nil];[data writeToFile:statusPath options:NSDataWritingAtomic error:nil];windowFrames=0;windowSamples=0;windowFresh=0;windowDuplicates=0;sampleTotal=0;duplicateWaitTotal=0;pacingWaitTotal=0;windowStart=now;writeTotal=0;maxQueued=0;drainMaxMs=0;drains=0;
    }
   }}
   if(traceFd>=0)close(traceFd);

@@ -26,7 +26,7 @@ Preferences are stored in `%LOCALAPPDATA%\Glowline\settings.json`. Import/export
 
 Recovery is bounded to an initial attempt plus three retries after 5, 10 and 20 seconds. Ten healthy seconds replenish each recovery budget. **Переподключить** retries immediately. The reconnect preference controls automatic serial recovery.
 
-The Metal Noctiluca night light and the experimental early-response capture switch are available only on macOS.
+The experimental early-response capture switch is available only on macOS.
 
 ## Build and check
 

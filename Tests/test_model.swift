@@ -103,3 +103,26 @@ import AppKit
     print("Model schedule clock/wake, tuning deduplication, profile restore and startup contracts passed")
     print("Startup migration, profile preservation and corruption backup contracts passed")
 }
+
+/// Offline models must not acquire hardware, login or capture permissions.
+@MainActor func runModelIsolationTests() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "Glowline-model-isolation-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let model = AppModel(stateDirectory: directory, inspectSystem: false, hardwareEnabled: false)
+    model.settings.port = directory.path
+    model.settings.launchAtLogin = true
+    model.begin()
+    model.configureLogin()
+    model.refreshDevices()
+    model.requestPermission()
+    model.startEngine()
+    model.restartEngine()
+    precondition(model.ports.isEmpty && model.displays.isEmpty && !model.permission)
+    precondition(!model.isConnected && !model.isStarting)
+    precondition(
+        model.logURL.path.hasPrefix(directory.path)
+            && !FileManager.default.fileExists(atPath: model.logURL.path))
+    model.shutdown()
+    print("Model isolation: no engine, hardware discovery or permission acquisition")
+}

@@ -2,11 +2,11 @@
 
 Glowline syncs a **Skydimo SK0L34 USB backlight with 112 LEDs** to colors at the edges of your screen. It runs in the macOS menu bar with a Russian interface and local settings.
 
-**[Download Glowline 1.2.0 for macOS](https://github.com/hardcodd/Glowline/releases/latest)** · [Windows 11 x64](docs/WINDOWS.md) · [User guide](docs/USER-GUIDE.en.md) · [Русский](README.md)
+**[Download Glowline 1.3.0 for macOS](https://github.com/hardcodd/Glowline/releases/latest)** · [Windows 11 x64](docs/WINDOWS.md) · [User guide](docs/USER-GUIDE.en.md) · [Русский](README.md)
 
 ![Glowline interface: lighting preview, brightness and warmth](docs/images/glowline-macos-ambient-lighting.png)
 
-*Version 1.2.0 includes scheduling, nine lighting modes and the built-in night light. The outline previews transmitted colors.*
+*Version 1.3.0 includes scheduling and nine lighting modes. The outline previews transmitted colors.*
 
 ## macOS requirements
 
@@ -27,10 +27,9 @@ A separate port for AMD and Intel provides a Russian interface, nine modes, sche
 
 ## Features
 
-Version 1.2.0 includes the following features.
+Version 1.3.0 includes the following features.
 
 - **Nine modes:** screen, solid, gradient, breathing, rainbow, candle, fire, comet and aurora.
-- **Built-in Noctiluca night light on macOS:** fullscreen animation rendered with Metal. Launch it from the Glowline menu or the App page, with no browser or separate installation.
 - **Color and warmth:** brightness, saturation, gamma and per-side correction.
 - **Color detail:** switch between dominant-hue sampling and standard averaging.
 - **Brightness schedule:** editable day/night start times and brightness, easy to adjust seasonally. Disabled by default.
@@ -42,7 +41,7 @@ Current settings **save automatically**, including across a complete quit. Profi
 
 ## Guides and help
 
-[Full user guide](docs/USER-GUIDE.en.md) · [Installation and updates](docs/INSTALL.md) · [What's new in 1.2.0](docs/RELEASE-1.2.0.md) · [Report an issue](https://github.com/hardcodd/Glowline/issues)
+[Full user guide](docs/USER-GUIDE.en.md) · [Installation and updates](docs/INSTALL.md) · [What's new in 1.3.0](docs/RELEASE-1.3.0.md) · [Report an issue](https://github.com/hardcodd/Glowline/issues)
 
 Download and open the offline [lighting test](docs/lighting-test.html) in a browser to compare colors on any aspect ratio, including ultrawide monitors. `F` toggles fullscreen, Space pauses and `H` hides controls.
 

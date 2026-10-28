@@ -48,7 +48,7 @@ def main() -> None:
         raise SystemExit("Rebuild the application with the current VERSION.json before packaging")
     run("codesign", "--verify", "--deep", "--strict", app)
     # Only known bundle paths may enter a distribution. Never package local data.
-    allowed = {"Contents/Info.plist", "Contents/MacOS/Glowline", "Contents/MacOS/GlowlineEngine", "Contents/Resources/AppIcon.icns", "Contents/Resources/Noctiluca.metal", "Contents/Resources/ru.lproj/Localizable.strings", "Contents/_CodeSignature/CodeResources"}
+    allowed = {"Contents/Info.plist", "Contents/MacOS/Glowline", "Contents/MacOS/GlowlineEngine", "Contents/Resources/AppIcon.icns", "Contents/Resources/ru.lproj/Localizable.strings", "Contents/_CodeSignature/CodeResources"}
     if set(files(app)) != allowed:
         raise SystemExit("Unexpected or missing application bundle files")
     output = args.output_dir.resolve() if args.output_dir else root / "build/distribution"

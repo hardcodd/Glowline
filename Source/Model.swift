@@ -152,7 +152,7 @@ struct DisplayChoice: Identifiable { var id: UInt32; var name: String }
         }
     }
     func configureLogin() {
-        guard hardwareEnabled else { loginStatus = tr("ambient.review"); return }
+        guard hardwareEnabled else { loginStatus = tr("login.disabled"); return }
         do {
             if settings.launchAtLogin && (SMAppService.mainApp.status == .notRegistered || SMAppService.mainApp.status == .notFound) { try SMAppService.mainApp.register() }
             if !settings.launchAtLogin && SMAppService.mainApp.status != .notRegistered { try SMAppService.mainApp.unregister() }

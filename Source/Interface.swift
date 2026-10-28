@@ -34,8 +34,6 @@ private let modeIcons = ["display", "lightbulb", "rectangle.fill.on.rectangle.fi
 
 struct RootView: View {
     @ObservedObject var model: AppModel
-    @ObservedObject var idleSettings: AmbientIdleSettings
-    var openAmbient: () -> Void = {}
     @Environment(\.colorScheme) private var scheme
     private var accentText: Color { scheme == .dark ? amber : .primary }
     private var canvas: Color { scheme == .dark ? Color(red: 0.065, green: 0.071, blue: 0.086) : Color(nsColor: .windowBackgroundColor) }
@@ -345,23 +343,6 @@ struct RootView: View {
     }
     private var appPage: some View {
         VStack(spacing: 20) {
-            card("ambient.title", icon: "moon.stars") {
-                Text(tr("ambient.description")).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button(action: openAmbient) { Label(tr("ambient.open"), systemImage: "play.fill") }
-                    .accessibilityIdentifier("ambient.open")
-                Divider().padding(.vertical, 4)
-                Toggle(tr("ambient.idle.enabled"), isOn: $idleSettings.enabled)
-                    .accessibilityIdentifier("ambient.idle.enabled")
-                Picker(tr("ambient.idle.delay"), selection: $idleSettings.minutes) {
-                    ForEach(AmbientIdleSettings.minuteChoices, id: \.self) { minutes in
-                        Text(String(format: tr("ambient.idle.minutes"), minutes)).tag(minutes)
-                    }
-                }
-                .disabled(!idleSettings.enabled)
-                .accessibilityIdentifier("ambient.idle.delay")
-                Text(tr("ambient.idle.help")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text(tr("ambient.stripHelp")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
             card("app.startup", icon: "power") {
                 Toggle(tr("control.login"), isOn: $model.settings.launchAtLogin)
                 Text(model.loginStatus).font(.caption).foregroundStyle(.secondary)

@@ -63,7 +63,7 @@ import SwiftUI
     model.page = "effects"; model.settings.mode = 7
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 690), styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
-    let host = NSHostingView(rootView: RootView(model: model, idleSettings: AmbientIdleSettings()))
+    let host = NSHostingView(rootView: RootView(model: model))
     window.contentView = host
     defer { window.close() }
     func settle() throws {

@@ -26,7 +26,7 @@ Closing the window keeps lighting running. Reopen settings through the menu-bar 
 Version 1.2.0 includes the following features.
 
 - **Nine modes:** screen, solid, gradient, breathing, rainbow, candle, fire, comet and aurora.
-- **Built-in Noctiluca night light on macOS:** fullscreen fiery stars and colorful nebulae rendered with Metal. Launch it from the Glowline menu or the App page, with no browser or separate installation.
+- **Built-in Noctiluca night light on macOS:** fullscreen animation rendered with Metal. Launch it from the Glowline menu or the App page, with no browser or separate installation.
 - **Color and warmth:** brightness, saturation, gamma and per-side correction.
 - **Color detail:** switch between dominant-hue sampling and standard averaging.
 - **Brightness schedule:** editable day/night start times and brightness, easy to adjust seasonally. Disabled by default.

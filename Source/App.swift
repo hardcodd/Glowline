@@ -11,6 +11,8 @@ import Combine
     private var observer: NSObjectProtocol?
     private var appearanceObserver: AnyCancellable?
     private var ambient: AmbientWindowController?
+    private let idleSettings = AmbientIdleSettings()
+    private var idleMonitor: AmbientIdleMonitor?
     private let isReview = Bundle.main.object(forInfoDictionaryKey: "GlowlineAmbientReview") as? Bool == true
     func applicationDidFinishLaunching(_ notification: Notification) {
         let firstLaunch = !FileManager.default.fileExists(atPath: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Glowline/settings.json").path)
@@ -30,6 +32,12 @@ import Combine
         let menu = NSMenu(); menu.delegate = self; item.menu = menu
         observer = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.model.restartEngine() } }
         model.begin()
+        idleMonitor = AmbientIdleMonitor(settings: idleSettings,
+            isOpen: { [weak self] in self?.ambient != nil },
+            isAutomatic: { [weak self] in self?.ambient?.isAutomatic == true },
+            launch: { [weak self] in self?.openAmbient(automatic: true) },
+            dismiss: { [weak self] in self?.ambient?.close() })
+        idleMonitor?.start()
         let login = NSAppleEventManager.shared().currentAppleEvent?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
         let background = CommandLine.arguments.contains("--background") || login
         if firstLaunch || !background || !model.settings.startHidden { showWindow() }
@@ -70,16 +78,26 @@ import Combine
     private func add(_ menu: NSMenu, title: String, action: Selector, key: String) { let entry = NSMenuItem(title: title, action: action, keyEquivalent: key); entry.target = self; menu.addItem(entry) }
     @objc private func openAction() { showWindow() }
     @objc private func openAmbientAction() {
+        openAmbient(automatic: false)
+    }
+    private func openAmbient(automatic: Bool) {
+        let previousApp = NSWorkspace.shared.frontmostApplication
         NSApp.setActivationPolicy(.regular)
         if ambient == nil {
             let controller = AmbientWindowController()
             controller.onClose = { [weak self] in
-                self?.ambient = nil
-                self?.showWindow()
+                guard let self else { return }
+                self.ambient = nil
+                if automatic {
+                    if NSApp.isActive, let previousApp, previousApp.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+                        previousApp.activate(options: [])
+                    }
+                    if self.window?.isVisible != true { NSApp.setActivationPolicy(.accessory) }
+                } else { self.showWindow() }
             }
             ambient = controller
         }
-        ambient?.show()
+        ambient?.show(automatic: automatic)
     }
     @objc private func toggleAction() { model.settings.enabled.toggle() }
     @objc private func modeAction(_ sender: NSMenuItem) { model.settings.mode = sender.tag }
@@ -90,14 +108,14 @@ import Combine
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 790), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             w.title = isReview ? "Glowline Review" : "Glowline"; w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
             w.isReleasedWhenClosed = false; w.delegate = self; w.minSize = NSSize(width: 1000, height: 725)
-            w.contentView = NSHostingView(rootView: RootView(model: model, openAmbient: { [weak self] in self?.openAmbientAction() })); w.setFrameAutosaveName(isReview ? "Glowline.ambientReview" : "Glowline.main"); w.center(); window = w
+            w.contentView = NSHostingView(rootView: RootView(model: model, idleSettings: idleSettings, openAmbient: { [weak self] in self?.openAmbientAction() })); w.setFrameAutosaveName(isReview ? "Glowline.ambientReview" : "Glowline.main"); w.center(); window = w
         }
         NSApp.setActivationPolicy(.regular); window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); NSApp.setActivationPolicy(ambient == nil ? .accessory : .regular); return false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationWillTerminate(_ notification: Notification) { ambient?.onClose = nil; ambient?.close(); ambient = nil; model?.shutdown(); if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) } }
+    func applicationWillTerminate(_ notification: Notification) { idleMonitor?.stop(); idleMonitor = nil; ambient?.onClose = nil; ambient?.close(); ambient = nil; model?.shutdown(); if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) } }
 }
 
 @main struct GlowlineMain {

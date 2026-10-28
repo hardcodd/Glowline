@@ -96,6 +96,12 @@ struct SceneBody {
     var physicalScale: Float { 2.4 + Float(hash(Double(id) * 11.19 + Double(variation))) * 4.2 }
     var referenceDepth: Float { physicalScale * depthScale }
     var worldRadius: Float { physicalScale * radius / sqrt(1 + radius * radius) }
+    /// Gravity-regime energy scaling with scene coefficients; depth is separately capped for visibility.
+    /// The shared radius keeps the height field and accepted ballistic curtain in agreement.
+    var craterRadius: Float {
+        let energy = 0.5 * mass * simd_length_squared(entryVelocity)
+        return clamp(0.75 * pow(energy / (3.2 * SandTerrain.gravity), 0.25), 0.38, 4)
+    }
     var apparentRadius: Float { worldRadius / sqrt(referenceDepth * referenceDepth - worldRadius * worldRadius) }
     func apparentRadius(at point: SIMD3<Float>) -> Float {
         let depth = simd_dot(point - SceneCamera.origin, SceneCamera.forward)

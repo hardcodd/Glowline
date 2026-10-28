@@ -14,21 +14,99 @@ import simd
             contacts.allSatisfy { $0.x > -62 && $0.x < 62 && $0.z > -110 && $0.z < 14 },
             "Every sampled impact at the widest supported aspect must fit the persistent terrain")
         let sand = SandTerrain()
+        let front = SandTerrain()
+        let frontBefore = front.cells
+        let frontCenter = SIMD2<Float>(0, -5)
+        let frontRadius: Float = 1.5
+        let frontTime = 0.75 * sqrt(frontRadius / SandTerrain.gravity)
+        front.strike(at: frontCenter, radius: frontRadius, direction: SIMD2(1, 0.3), seed: 7)
+        front.advance(delta: Double(frontTime * 0.25))
+        var earlyCrest: Float = 0
+        for index in front.cells.indices {
+            let p = SandTerrain.origin + (SIMD2(Float(index % SandTerrain.resolution),
+                Float(index / SandTerrain.resolution)) + 0.5) * SandTerrain.cellSize
+            let r = simd_length(p - frontCenter) / frontRadius
+            guard r > 0.4, r < 0.75 else { continue }
+            earlyCrest = max(earlyCrest, front.cells[index].x - frontBefore[index].x)
+        }
+        precondition(earlyCrest > 0.008,
+            "The excavation crest must travel through the inner annuli before reaching the final rim")
+        func crestRadius() -> Float {
+            var moment: Float = 0, weight: Float = 0
+            for index in front.cells.indices {
+                let p = SandTerrain.origin + (SIMD2(Float(index % SandTerrain.resolution),
+                    Float(index / SandTerrain.resolution)) + 0.5) * SandTerrain.cellSize
+                let r = simd_length(p - frontCenter) / frontRadius
+                let raised = front.cells[index].x - frontBefore[index].x
+                guard r > 0.35, r < 0.95, raised > 0.008 else { continue }
+                moment += r * raised
+                weight += raised
+            }
+            precondition(weight > 0, "A traveling crest must remain visible ahead of the cavity")
+            return moment / weight
+        }
+        let earlyRadius = crestRadius()
+        front.advance(delta: Double(frontTime * 0.35))
+        precondition(crestRadius() > earlyRadius + 0.12,
+            "The raised crest must move outward rather than inflate at a fixed radius")
+        front.advance(delta: Double(frontTime * 0.45))
+        let finishedFront = front.cells
+        front.advance(delta: 1.5)
+        var lateRimGrowth: Float = 0
+        for index in front.cells.indices {
+            let p = SandTerrain.origin + (SIMD2(Float(index % SandTerrain.resolution),
+                Float(index / SandTerrain.resolution)) + 0.5) * SandTerrain.cellSize
+            let r = simd_length(p - frontCenter) / frontRadius
+            guard r > 0.85, r < 1.3 else { continue }
+            lateRimGrowth = max(lateRimGrowth, front.cells[index].x - finishedFront[index].x)
+        }
+        precondition(lateRimGrowth < 0.002,
+            "A finished cavity must not acquire a second rising collar from delayed deposits")
+        // A simple crater has one continuous wall and crest, followed by a broad
+        // exterior shoulder. Moderate incidence must not turn it into a flower.
+        let lunar = SandTerrain()
+        let lunarCenter = SIMD2<Float>(0, -8)
+        lunar.strike(at: lunarCenter, radius: 2, direction: SIMD2(1, 0), seed: 7, obliquity: 0.5)
+        lunar.advance(delta: 3)
+        func displacement(_ radius: Float, _ angle: Float) -> Float {
+            let p = lunarCenter + SIMD2(cos(angle), sin(angle)) * radius
+            return lunar.height(at: p) - SandTerrain.regolithHeight(at: p)
+        }
+        var crestRadii: [Float] = []
+        for ray in 0..<24 {
+            let angle = Float(ray) * .pi / 12
+            let samples = (14...28).map { Float($0) * 0.1 }
+            let crest = samples.max { displacement($0, angle) < displacement($1, angle) }!
+            crestRadii.append(crest)
+            precondition(displacement(2.6, angle) > 0.004,
+                "The rim must blend into a broad exterior shoulder instead of a detached narrow ring")
+        }
+        precondition(crestRadii.max()! - crestRadii.min()! < 0.5,
+            "Simple lunar craters remain nearly circular at moderate incidence")
         let point = SIMD2<Float>(0, -8)
         let original = sand.height(at: point)
         let distant = sand.height(at: SIMD2(12, -20))
+        let shoulder = point + SIMD2<Float>(0.65, 0)
+        let shoulderBefore = sand.height(at: shoulder)
         sand.strike(at: point, radius: 1, direction: SIMD2(1, 0), seed: 7)
+        precondition(sand.height(at: shoulder) == shoulderBefore,
+            "The excavation front must not cut the outer bowl in the contact frame")
         let punched = sand.height(at: point)
-        precondition(punched < original - 0.25, "Impact must punch out the bowl in the contact frame")
+        precondition(punched < original - 0.10, "Impact must punch out a moderate contact core")
         sand.advance(delta: 1 / 60)
         precondition(
             sand.height(at: point) == punched,
             "The excavated floor must not keep stretching downward like a viscous surface")
+        precondition(sand.height(at: shoulder) > shoulderBefore - 0.005,
+            "The outer bowl waits for the expanding excavation front")
         sand.advance(delta: 0.08 - 1 / 60)
+        sand.advance(delta: 0.2)
+        precondition(sand.height(at: shoulder) < shoulderBefore - 0.04,
+            "The advancing front must expose the outer bowl")
         sand.advance(delta: 1)
         sand.advance(delta: 8)
         let first = sand.height(at: point)
-        precondition(first < original - 0.2, "Impact must excavate a real depression")
+        precondition(first < original - 0.09, "Impact must retain a readable shallow depression")
         precondition(sand.height(at: SIMD2(12, -20)) == distant)
         let snapshot = sand.cells
         for _ in 0..<100 { _ = sand.height(at: point) }
@@ -48,22 +126,65 @@ import simd
         precondition(sand.cells.count == SandTerrain.resolution * SandTerrain.resolution)
         precondition(
             sand.cells.allSatisfy { $0.x.isFinite && $0.y.isFinite && $0.z.isFinite && $0.w.isFinite })
-        precondition(sand.cells.allSatisfy { $0.x >= -2 && $0.x <= 0.65 })
+        precondition(sand.cells.allSatisfy { $0.x >= SandTerrain.minimumHeight - 0.0001 && $0.x <= 0.65 },
+            "Repeated strikes must never turn a shallow crater into a deep shaft")
+        let foreground = SandTerrain()
+        for index in 0..<80 {
+            foreground.strike(
+                at: SIMD2(sin(Float(index) * 2.4) * 1.2, -2 + cos(Float(index) * 1.7) * 0.7),
+                radius: 0.6 + Float(index % 5) * 0.22, direction: SIMD2(1, 0.4),
+                seed: Float(index), obliquity: 0.6)
+            if index % 8 == 0 {
+                foreground.launchShock(at: SIMD2(0, -3), bodyRadius: 0.5, direction: SIMD2(1, 0), seed: Float(index))
+            }
+            foreground.advance(delta: 0.4)
+        }
+        foreground.advance(delta: 3)
+        var highestSightline: Float = -10
+        var deepestForeground: Float = 0
+        for z in 0..<SandTerrain.resolution {
+            for x in 0..<SandTerrain.resolution {
+                let p = SandTerrain.origin + (SIMD2(Float(x), Float(z)) + 0.5) * SandTerrain.cellSize
+                guard abs(p.x) < 5, p.y < -0.45, p.y > -8 else { continue }
+                let height = foreground.cells[z * SandTerrain.resolution + x].x
+                highestSightline = max(highestSightline, SceneCamera.project(SIMD3(p.x, height, p.y)).y)
+                deepestForeground = min(deepestForeground, height)
+            }
+        }
+        precondition(highestSightline < -0.29, "Repeated foreground impacts must never build walls above the ground horizon")
+        precondition(deepestForeground < -0.1 && deepestForeground >= SandTerrain.minimumHeight - 0.0001,
+            "Foreground bowls must remain readable without hiding subsequent impacts")
+        print("PASS: 80 clustered foreground impacts preserve open sightlines and crater depth")
         let slow = SandTerrain()
         let fast = SandTerrain()
         for field in [slow, fast] { field.strike(at: point, radius: 1, direction: SIMD2(1, 0), seed: 7) }
         slow.advance(delta: 0.08)
         for _ in 0..<8 { fast.advance(delta: 0.01) }
         precondition(
-            abs(slow.height(at: point) - fast.height(at: point)) < 0.00001,
+            zip(slow.cells, fast.cells).allSatisfy { abs($0.x - $1.x) < 0.00001 },
             "Excavation timing must not depend on presentation rate")
         let paused = fast.cells
         fast.advance(delta: 0)
         precondition(paused == fast.cells, "Pause must freeze an unfinished crater")
+        let continuity = SandTerrain()
+        continuity.strike(at: point, radius: 1, direction: SIMD2(1, 0), seed: 7)
+        var previous = continuity.height(at: shoulder)
+        var movingFrames = 0
+        for _ in 0..<30 {
+            continuity.advance(delta: 1 / 120)
+            let current = continuity.height(at: shoulder)
+            if abs(current - previous) > 0.0001 { movingFrames += 1 }
+            precondition(abs(current - previous) < 0.035,
+                "A local fracture must unfold across ticks rather than pop a whole cell")
+            previous = current
+        }
+        precondition(movingFrames >= 4, "The fracture front must have visible local progression")
+        print("PASS: traveling excavation crest, no late collar, local continuity, whole-field cadence and pause")
         let gravity = SandTerrain()
         gravity.strike(at: point, radius: 0.6, direction: SIMD2(1, 0), seed: 7)
         let punchedCells = gravity.cells
-        gravity.advance(delta: 0.3)
+        // Measure conservative slumping only after the staggered ejecta have all landed.
+        gravity.advance(delta: 1.5)
         let unstable = gravity.cells
         let volume = unstable.reduce(0.0) { $0 + Double($1.x) }
         func steepness(_ field: [SIMD4<Float>]) -> Float {
@@ -110,7 +231,7 @@ import simd
         precondition(
             molten.meltPools.count == 2, "Overlapping hot impacts must retain independent cooling ages")
         molten.advance(delta: 8)
-        precondition(molten.meltPools.isEmpty && molten.height(at: point) < original - 0.1)
+        precondition(molten.meltPools.isEmpty && molten.height(at: point) < original - 0.08)
         precondition(molten.cells.contains { $0.w > 0.85 }, "Frozen melt must retain a dark fused residue")
         for index in 0..<20 {
             molten.strike(at: point, radius: 0.4, direction: SIMD2(1, 0), seed: Float(index), heat: 1)
@@ -125,8 +246,18 @@ import simd
             at: point, radius: 1, direction: SIMD2(1, 0), seed: 7, heat: 0.75, penetration: 1)
         for field in [shallowHot, penetratingHot] { field.advance(delta: 1.5) }
         precondition(
-            penetratingHot.height(at: point) < shallowHot.height(at: point) - 0.15,
-            "Massive impacts must excavate below the shallow molten skin")
+            penetratingHot.height(at: point) < shallowHot.height(at: point)
+                && penetratingHot.height(at: point) > SandTerrain.minimumHeight,
+            "Penetration may vary a shallow bowl without creating a hidden deep pit")
+        for _ in 0..<8 {
+            shallowHot.strike(at: point, radius: 1, direction: SIMD2(1, 0), seed: 7)
+            shallowHot.advance(delta: 2)
+        }
+        shallowHot.strike(at: point, radius: 1, direction: SIMD2(1, 0), seed: 7, heat: 1)
+        let coreGrid = (point - SandTerrain.origin) / SandTerrain.cellSize
+        let coreIndex = Int(coreGrid.y) * SandTerrain.resolution + Int(coreGrid.x)
+        precondition(shallowHot.cells[coreIndex].w > 1,
+            "An impact at the depth limit must still expose hot material without digging deeper")
         let verticalEjecta = SandTerrain()
         let obliqueEjecta = SandTerrain()
         verticalEjecta.strike(at: point, radius: 1, direction: SIMD2(1, 0), seed: 23)
@@ -153,7 +284,55 @@ import simd
             forward > rearward * 1.4,
             "An oblique impact must bias the persistent ejecta along incoming travel")
         let massive = SceneBody(id: 79, birth: 0, seed: 1, depthScale: 1, depthDirection: 0)
+        let energetic = SceneBody(id: 79, birth: 0, seed: 1, depthScale: 1, depthDirection: 0,
+            composition: ArrivalComposition(hue: massive.hue, slope: massive.slope, speedScale: 2))
+        precondition(energetic.worldRadius == massive.worldRadius
+            && energetic.craterRadius > massive.craterRadius * 1.15,
+            "For equal bodies a stronger kinetic impact must widen the crater")
         precondition(massive.radius >= 0.16)
+        var radialParticles: [ParticleGPU] = []
+        ParticleEmitter(seed: 17).emitImpact(
+            body: massive, at: SIMD3(0, 0, -5), color: SIMD3(1, 0.3, 0.05),
+            palette: 0, terrain: SandTerrain(), into: &radialParticles)
+        let grains = radialParticles.filter { $0.color.w == ParticleKind.regolithGrain.rawValue }
+        var offsetParticles: [ParticleGPU] = []
+        ParticleEmitter(seed: 17).emitImpact(
+            body: massive, at: SIMD3(0, 0, -5), color: SIMD3(1, 0.3, 0.05),
+            palette: 0, terrain: SandTerrain(), into: &offsetParticles, launchOffset: 0.08)
+        for (baseline, offset) in zip(radialParticles, offsetParticles) {
+            guard baseline.color.w == ParticleKind.regolithGrain.rawValue
+                    || baseline.color.w == ParticleKind.soilDust.rawValue else { continue }
+            precondition(abs(offset.life.y - baseline.life.y + 0.08) < 0.00001
+                && offset.position == baseline.position && offset.owner == baseline.owner,
+                "Subframe contact must delay soil without changing its source or launch velocity")
+        }
+        let craterRadius = massive.craterRadius
+        precondition(grains.allSatisfy { $0.life.x < craterRadius * 0.015 },
+                     "Soil fragments must remain small compared with their source crater")
+        precondition(grains.allSatisfy { $0.position.y >= 0.005 },
+                     "Ejecta must emerge from the struck surface instead of hiding in the excavated bowl")
+        precondition(grains.contains { $0.life.y < -0.2 } && grains.contains { $0.life.y >= -0.1 },
+                     "Soil must erupt progressively rather than spawning one simultaneous sheet")
+        var sectors = Set<Int>()
+        for grain in grains {
+            let horizontal = SIMD2(grain.position.z, grain.owner.w)
+            let source = SIMD2(grain.position.x, grain.owner.z + 5)
+            precondition(simd_dot(simd_normalize(source), simd_normalize(horizontal)) > 0.999,
+                         "Soil must launch radially without an inherited camera-facing velocity")
+            let angle = atan2(horizontal.y, horizontal.x)
+            sectors.insert(Int(floor((angle + .pi) / (.pi * 2) * 8)) % 8)
+        }
+        precondition(sectors.count == 8, "Soil ejecta must spread into every radial sector")
+        let ordered = grains.sorted { $0.life.y > $1.life.y }
+        let early = ordered.prefix(grains.count / 4), late = ordered.suffix(grains.count / 4)
+        func meanSpeed(_ samples: ArraySlice<ParticleGPU>) -> Float {
+            samples.reduce(0) { $0 + simd_length(SIMD3($1.position.z, $1.position.w, $1.owner.w)) }
+                / Float(samples.count)
+        }
+        precondition(meanSpeed(early) > meanSpeed(late) * 2,
+                     "Excavation must release the fastest material first and slow toward the rim")
+        precondition(early.reduce(0) { $0 + $1.life.x } < late.reduce(0) { $0 + $1.life.x },
+                     "The later slower curtain must contain coarser material on average")
         let breakup = SceneSimulation(seed: 1, bodies: [massive], time: massive.groundAge - 0.3)
         var chunks = 0
         while breakup.bodies[0].groundContact == nil {

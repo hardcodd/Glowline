@@ -4,7 +4,7 @@ import simd
 /// Aligned SIMD structures shared verbatim with Metal; no reference-owned state crosses the GPU boundary.
 struct ParticleGPU {
     var position: SIMD4<Float>  // world xy position, xy velocity
-    var life: SIMD4<Float>  // size, age, duration, seed
+    var life: SIMD4<Float>  // size, age (negative for scheduled ejecta), duration, seed
     var color: SIMD4<Float>  // linear RGB, ParticleKind.rawValue
     var owner: SIMD4<Float>  // event identity, ParticleDynamics.rawValue, world z, z velocity
     var orientation: SIMD4<Float> = SIMD4(0, 0, 0, 1)  // unit quaternion, xyzw
@@ -21,7 +21,7 @@ struct BodyGPU {
     var spatial: SIMD4<Float> = .zero  // world xyz center, physical radius
     var contact: SIMD4<Float> = .zero  // fixed world xyz impact point, 1 for ground and 0 for air contact
     var impactEffects: SIMD4<Float> = .zero  // bolide flash, shower radiance, ground tremor strength, reserved
-    var flight: SIMD4<Float> = .zero  // unit rear direction in world xyz; zero for static diagnostic geometry
+    var flight: SIMD4<Float> = .zero  // unit rear xyz (zero for static diagnostics), speed in image heights/scene second
 }
 
 struct SimulationFrame {
@@ -36,5 +36,5 @@ struct FrameUniformsGPU {
     var controls: SIMD4<Float>  // scene delta, brightness, camera shake xy in image-height units
     var counts: SIMD4<UInt32>  // particle capacity, new particle count, ring head, body count
     var options: SIMD4<Float>  // fade, fill mode, reset flag, reserved
-    var thermal: SIMD4<UInt32> = .zero  // melt pool count, active shock shell count, zw reserved
+    var thermal: SIMD4<UInt32> = .zero  // melt pool count, shock shell count, incoming atmosphere count, reserved
 }

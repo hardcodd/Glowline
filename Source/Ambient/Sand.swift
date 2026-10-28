@@ -30,6 +30,10 @@ final class SandTerrain {
     static let resolution = 1024
     static let cellSize: Float = 0.125
     static let origin = SIMD2<Float>(-64, -112)
+    /// Low relief stays below the fixed camera; spectacle belongs to airborne ejecta and crater interiors.
+    static let maximumHeight: Float = 0.14
+    /// Keep later impacts visible: coincident strikes cannot excavate a deep shaft.
+    static let minimumHeight: Float = -0.28
     private(set) var cells: [SIMD4<Float>]
     private(set) var revision = 0
     private(set) var impactCount = 0
@@ -38,8 +42,9 @@ final class SandTerrain {
         var age: Float = 0
         let xs: ClosedRange<Int>
         let zs: ClosedRange<Int>
-        /// Cell, thickness, arrival time and fresh-ejecta tint; excavation is already complete.
-        let deposits: [(Int, Float, Float, Float)]
+        /// Signed height increments over short local fracture/landing windows, never absolute targets.
+        let packets: [(index: Int, amount: Float, start: Float, end: Float, tint: Float)]
+        let duration: Float
     }
     private var formations: [Formation] = []
     private struct ShockParcel {
@@ -79,12 +84,14 @@ final class SandTerrain {
         let xs: ClosedRange<Int>
         let zs: ClosedRange<Int>
         var age: Float
+        let minimumAge: Float
         var changes: [Float]
 
-        init(xs: ClosedRange<Int>, zs: ClosedRange<Int>, age: Float) {
+        init(xs: ClosedRange<Int>, zs: ClosedRange<Int>, age: Float, minimumAge: Float) {
             self.xs = xs
             self.zs = zs
             self.age = age
+            self.minimumAge = minimumAge
             changes = [Float](repeating: 0, count: xs.count * zs.count)
         }
     }
@@ -115,9 +122,10 @@ final class SandTerrain {
         let center = tile * 3 + SIMD2(0.9 + sample(13) * 1.2, 0.9 + sample(29) * 1.2)
         let radius = 0.22 + seed * 0.43
         let distance = simd_length(point - center) / radius
-        let bowl = pow(max(0, 1 - distance * distance), 1.5)
-        let rim = exp(-pow((distance - 1.05) / 0.19, 2))
-        let crater = (-bowl + rim * 0.3) * (0.04 + seed * 0.09)
+        let bowl = max(0, 1 - distance * distance)
+        let rim = distance < 1 ? pow(distance, 6) : pow(max(1, distance), -3)
+            * pow(max(0, 1 - pow((distance - 1) / 1.6, 2)), 2)
+        let crater = (-bowl + rim * 0.24) * (0.04 + seed * 0.09)
         return crater + 0.018 * sin(point.x * 1.7 + sin(point.y * 2.3))
             * cos(point.y * 1.31 + sin(point.x * 2.71))
             + 0.009 * sin(point.x * 4.13 + point.y * 3.77)
@@ -143,7 +151,7 @@ final class SandTerrain {
     /// Excavate the current terrain, preserving earlier strikes. An irregular rim deposits displaced sand.
     /// Bounds prevent repeated coincident hits from creating camera-sized spikes or an unbounded pit.
     /// `elapsed` is scene time since swept contact; applying it immediately prevents a one-frame delay.
-    /// `heat` (0...1) starts cooling melt; `penetration` (0...1) deepens massive impacts below that melt skin.
+    /// `heat` (0...1) starts cooling melt; `penetration` adds a bounded depth variation.
     /// `color` is captured at impact so later palette changes cannot recolor existing lakes.
     /// `obliquity` (0...1) biases the footprint and ejecta down the horizontal incoming direction.
     func strike(
@@ -152,7 +160,7 @@ final class SandTerrain {
         color: SIMD3<Float> = SIMD3(1, 0.16, 0.008)
     ) {
         let radius = max(0.38, radius)
-        let extent = radius * (4.2 + obliquity * 1.47)
+        let extent = radius * (6.2 + obliquity * 1.47)
         let low = (point - SIMD2(repeating: extent) - Self.origin) / Self.cellSize
         let high = (point + SIMD2(repeating: extent) - Self.origin) / Self.cellSize
         let x0 = max(0, Int(floor(low.x)))
@@ -162,59 +170,104 @@ final class SandTerrain {
         guard x0 <= x1, z0 <= z1 else { return }
         let axis = simd_length(direction) > 0.001 ? simd_normalize(direction) : SIMD2(1, 0)
         let across = SIMD2(-axis.y, axis.x)
-        let depth = min(1.1, radius * 0.32 * (1 + penetration * 0.8))
-        let floorLevel = height(at: point) - depth * (penetration > 0 ? 0.55 : 0.18)
-        var deposits: [(Int, Float, Float, Float)] = []
+        let depth = min(0.22, max(0.10, radius * 0.14) * (1 + penetration * 0.15))
+        let floorLevel = max(Self.minimumHeight, height(at: point) - depth)
+        var packets: [(Int, Float, Float, Float, Float)] = []
+        // Same gravity-scaled excavation clock as the accepted airborne curtain.
+        let excavationTime = 0.75 * sqrt(radius / Self.gravity)
+        var duration: Float = excavationTime
         for z in z0...z1 {
             for x in x0...x1 {
                 let p = Self.origin + (SIMD2(Float(x), Float(z)) + 0.5) * Self.cellSize - point
-                let q = SIMD2(simd_dot(p, axis) / (1 + obliquity * 0.35), simd_dot(p, across)) / radius
+                // Only grazing impacts appreciably elongate a simple crater.
+                let q = SIMD2(simd_dot(p, axis) / (1 + pow(obliquity, 8) * 0.35), simd_dot(p, across)) / radius
                 let angle = atan2(q.y, q.x)
                 let irregularity: Float =
-                    1 + 0.12 * sin(angle * 3 + seed)
-                    + 0.07 * sin(angle * 7 - seed * 1.3) + 0.035 * sin(angle * 13 + seed * 2.1)
+                    1 + 0.025 * sin(angle * 3 + seed)
+                    + 0.012 * sin(angle * 7 - seed * 1.3)
                 let distance = simd_length(q) / irregularity
-                let bowl = pow(max(0, 1 - distance * distance), 1.4)
-                // Broken lips and radial ejecta lobes avoid a smooth extruded torus around every strike.
-                let lobes =
-                    0.65 + 0.22 * sin(angle * 5 + seed * 1.7)
-                    + 0.13 * sin(angle * 11 - seed)
-                let breaches = 1 - 0.8 * pow(max(0, sin(angle * 3 + seed * 0.7)), 8)
-                let rim = exp(-pow((distance - 1.04) / (0.075 + lobes * 0.045), 2)) * lobes * breaches
+                // A paraboloid meets one crest directly; the exterior shoulder
+                // decays cubically instead of forming an isolated Gaussian ring.
+                let bowl = max(0, 1 - distance * distance)
+                let lobes = 1 + 0.12 * sin(angle * 5 + seed * 1.7)
+                    + 0.06 * sin(angle * 11 - seed)
+                let rim = (distance < 1 ? pow(distance, 6)
+                    : pow(max(1, distance), -3)
+                        * pow(max(0, 1 - pow((distance - 1) / 1.6, 2)), 2)) * lobes
                 let downrange = cos(angle)
                 let ray =
                     pow(max(0, sin(angle * 17 + seed + sin(angle * 5 + seed) * 2)), 8)
                     + 0.5 * pow(max(0, sin(angle * 29 - seed * 2)), 12)
                 let fan = max(0.08, 1 + obliquity * downrange * 1.3)
-                let reach = 3.8 + obliquity * max(0, downrange) * 0.4
+                let reach = 5.8 + obliquity * max(0, downrange) * 0.4
                 let apron =
                     distance > 1 && distance < reach
-                    ? exp(-(distance - 1) * 1.1) * (0.025 + ray * 0.22) * fan : 0
+                    ? exp(-(distance - 1) * 0.85) * (0.012 + ray * 0.09) * fan
+                        * clamp((distance - 1.35) / 0.65, 0, 1) * 0.35 : 0
                 let index = z * Self.resolution + x
                 // A hot floor levels locally before freezing; dry walls keep their excavated profile.
                 let excavation =
-                    heat > 0
-                    ? min(0, max(cells[index].x - depth * bowl, floorLevel) - cells[index].x)
-                    : -depth * bowl
-                // Contact punches out solid material immediately. Ejecta land in discrete packets.
-                cells[index].x = clamp(cells[index].x + excavation, -2, 0.65)
-                if bowl > 0.001 { cells[index].w = max(cells[index].w, bowl * (heat > 0 ? 1.2 : 0.8)) }
-                let deposit = depth * (0.55 * rim * max(0.2, 1 + obliquity * downrange * 0.7) + apron)
+                    min(0, max(cells[index].x - depth * bowl,
+                        heat > 0 ? floorLevel : Self.minimumHeight) - cells[index].x)
+                // Cold fractured regolith is not a black soot-filled hole.
+                let scorch = bowl * (heat > 0 ? Float(1.2) : Float(0.12))
+                let arrival = excavationTime * pow(clamp((distance - 0.28) / 0.68, 0, 1), 1.4)
+                let fractureStart = max(0, arrival - 0.065)
+                // Heating remains visible even when earlier strikes have reached the depth limit.
+                if bowl > 0.001 {
+                    if arrival <= 0 {
+                        cells[index].x = clamp(cells[index].x + excavation, Self.minimumHeight, Self.maximumHeight)
+                        cells[index].w = max(cells[index].w, scorch)
+                    } else {
+                        packets.append((index, excavation, fractureStart, arrival, scorch))
+                    }
+                }
+                let lip = depth * 0.24 * rim * max(0.7, 1 + obliquity * downrange * 0.2)
+                var upliftEnd = max(0.008, fractureStart)
+                var upliftStart = max(0, upliftEnd - 0.065)
+                if distance >= 1 && lip > 0.00001 {
+                    // The broad pressure shoulder precedes excavation. Its
+                    // disturbance expands outward rather than lifting the whole
+                    // exterior on one late clock. Relief remains scene-scaled.
+                    let precursor = excavationTime
+                        * pow(clamp((distance / 1.4 - 0.28) / 0.68, 0, 1), 1.4)
+                    upliftEnd = max(0.008, min(upliftEnd, precursor))
+                    let leadingEdge = excavationTime
+                        * pow(clamp((distance / 2.6 - 0.28) / 0.68, 0, 1), 1.4)
+                    upliftStart = max(0, min(upliftEnd - 0.008, leadingEdge))
+                }
+                if lip > 0.00001 {
+                    // Each annulus is displaced before its local excavation.
+                    // A shared fixed-radius rise would inflate a collar behind the front.
+                    packets.append((index, lip, upliftStart, upliftEnd, 0))
+                }
+                if distance > 0.28 && distance < 1 && arrival > upliftEnd {
+                    // A temporary crest travels outward, then is consumed by the
+                    // cavity. Only the terminal crest remains as the permanent rim.
+                    let crest = max(0, depth * 0.24 * lobes - lip)
+                    packets.append((index, crest, upliftStart, upliftEnd, 0))
+                    packets.append((index, -crest, upliftEnd, arrival, 0))
+                }
+                let deposit = depth * apron
                 if deposit > 0.00001 {
-                    let jitter = Float(hash(Double(index) * 0.73 + Double(seed)))
                     let fresh = distance > 1 && deposit > 0.001 ? min(1, deposit * 18) : 0
-                    deposits.append(
-                        (index, deposit, min(0.29, 0.045 + jitter * 0.055 + distance * 0.05), fresh))
+                    // Adjacent cells land as coherent lobes, with no independent pixel-sized pops.
+                    let arrival = excavationTime + 0.08 + max(0, distance - 1) * 0.11
+                        + 0.025 * sin(angle * 5 + seed)
+                    let end = arrival + 0.18
+                    packets.append((index, deposit, arrival, end, -fresh))
+                    duration = max(duration, end)
                 }
             }
         }
         var formation = Formation(
             xs: max(0, x0 - 1)...min(Self.resolution - 1, x1 + 1),
-            zs: max(0, z0 - 1)...min(Self.resolution - 1, z1 + 1), deposits: deposits)
+            zs: max(0, z0 - 1)...min(Self.resolution - 1, z1 + 1), packets: packets,
+            duration: duration)
         apply(&formation, delta: elapsed)
         updateSlopes(x: formation.xs, z: formation.zs)
-        if formation.age < 0.3 { formations.append(formation) }
-        activateSlopes(x: formation.xs, z: formation.zs, age: formation.age)
+        if formation.age < formation.duration { formations.append(formation) }
+        activateSlopes(x: formation.xs, z: formation.zs, age: formation.age, minimumAge: duration)
         if heat > 0 {
             if meltPools.count == 16 { meltPools.removeFirst() }
             meltPools.append(
@@ -288,7 +341,7 @@ final class SandTerrain {
             let event = wave.events[wave.cursor]
             let parcel = wave.parcels[event.parcel]
             if event.landing {
-                let deposited = min(parcel.amount, max(0, 0.65 - cells[parcel.target].x))
+                let deposited = min(parcel.amount, max(0, Self.maximumHeight - cells[parcel.target].x))
                 cells[parcel.target].x += deposited
                 cells[parcel.source].x += parcel.amount - deposited
                 if deposited > 0 {
@@ -301,7 +354,8 @@ final class SandTerrain {
                         + cells[index - Self.resolution].x + cells[index + Self.resolution].x) * 0.25
                 let ridge = max(0, cells[index].x - mean)
                 let amount = min(
-                    max(0, cells[index].x + 2), min(0.06, (0.004 + ridge * 0.7) * parcel.attenuation))
+                    max(0, cells[index].x - Self.minimumHeight),
+                    min(0.06, (0.004 + ridge * 0.7) * parcel.attenuation))
                 wave.parcels[event.parcel].amount = amount
                 cells[index].x -= amount
                 if amount > 0.0001 && parcel.sample < 0.1 {
@@ -329,7 +383,7 @@ final class SandTerrain {
         return changed
     }
 
-    /// Ballistic rim packets finish by 0.3 seconds; dry slope failures move without deforming the floor.
+    /// Excavation expands with the launch annulus; local deposition and dry slope failure follow.
     /// A zero delta freezes both phases. Fixed physics ticks preserve cadence-independent transport.
     func advance(delta: Double) {
         guard delta > 0 else { return }
@@ -356,14 +410,15 @@ final class SandTerrain {
             pressureWaves.removeAll { $0.cursor == $0.events.count }
             for i in formations.indices { apply(&formations[i], delta: step) }
             changed = changed || !formations.isEmpty
-            formations.removeAll { $0.age >= 0.3 }
+            formations.removeAll { $0.age >= $0.duration }
             for i in avalanches.indices.reversed() {
                 avalanches[i].age += Float(step)
                 // Excavation is impulsive; gravity then collapses the freshly exposed lips and walls.
                 guard avalanches[i].age >= 0.08 else { continue }
                 let moving = settle(avalanches[i], delta: Float(step))
                 changed = changed || moving
-                if !moving && avalanches[i].age >= 0.3 { avalanches.remove(at: i) }
+                // A quiet lip can become unstable again when a later ejecta packet lands.
+                if !moving && avalanches[i].age >= avalanches[i].minimumAge { avalanches.remove(at: i) }
             }
             if formations.isEmpty && avalanches.isEmpty && pressureWaves.isEmpty {
                 remainder = 0
@@ -388,10 +443,13 @@ final class SandTerrain {
 
     /// Keep work local to each strike; generation stamps deduplicate their shared edges.
     /// Merging bounding rectangles would accumulate large stable gaps during a long session.
-    private func activateSlopes(x: ClosedRange<Int>, z: ClosedRange<Int>, age: Float) {
+    private func activateSlopes(
+        x: ClosedRange<Int>, z: ClosedRange<Int>, age: Float, minimumAge: Float = 0.95
+    ) {
         let patch = Avalanche(
             xs: max(0, x.lowerBound - 3)...min(Self.resolution - 1, x.upperBound + 3),
-            zs: max(0, z.lowerBound - 3)...min(Self.resolution - 1, z.upperBound + 3), age: age)
+            zs: max(0, z.lowerBound - 3)...min(Self.resolution - 1, z.upperBound + 3),
+            age: age, minimumAge: minimumAge)
         avalanches.append(patch)
     }
 
@@ -451,14 +509,24 @@ final class SandTerrain {
         return moved
     }
 
-    /// A cell receives its ejecta once at arrival, without a continuous surface-height tween.
+    /// Integrate local packets additively so overlapping impacts cannot overwrite one another.
     private func apply(_ formation: inout Formation, delta: Double) {
         let old = formation.age
         formation.age += Float(max(0, delta))
-        for (index, thickness, arrival, fresh) in formation.deposits
-        where old < arrival && formation.age >= arrival {
-            cells[index].x = clamp(cells[index].x + thickness, -2, 0.65)
-            if fresh > 0 { cells[index].w = min(cells[index].w, -fresh) }
+        for packet in formation.packets where old < packet.end && formation.age > packet.start {
+            func fraction(_ age: Float) -> Float {
+                let t = clamp((age - packet.start) / (packet.end - packet.start), 0, 1)
+                return t * t * (3 - 2 * t)
+            }
+            let progress = fraction(formation.age)
+            let increment = progress - fraction(old)
+            cells[packet.index].x = clamp(
+                cells[packet.index].x + packet.amount * increment, Self.minimumHeight, Self.maximumHeight)
+            if packet.tint > 0 {
+                cells[packet.index].w = max(cells[packet.index].w, packet.tint * progress)
+            } else if packet.tint < 0 {
+                cells[packet.index].w = min(cells[packet.index].w, packet.tint * progress)
+            }
         }
     }
 

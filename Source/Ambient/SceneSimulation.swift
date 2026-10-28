@@ -123,7 +123,7 @@ final class SceneSimulation {
                     impactEffects: SIMD4(
                         body.model.isBolide ? 1 : 0, body.model.showerMember == nil ? 0 : 1,
                         body.impactShakeStrength, 0),
-                    flight: SIMD4(-simd_normalize(body.entryVelocity), 0)))
+                    flight: SIMD4(-simd_normalize(body.entryVelocity), body.screenSpeed)))
 
             emitter.emitTrail(
                 body: &body, from: before, to: time, resolvedAge: resolvedAge,
@@ -132,7 +132,7 @@ final class SceneSimulation {
                 body.impactEmitted = true
                 emitter.emitImpact(
                     body: body, at: burstOrigin, color: color, palette: palette,
-                    terrain: terrain, into: &particles)
+                    terrain: terrain, into: &particles, launchOffset: max(0, Float(delta) - hitAge))
             }
 
             bodies[index] = body
@@ -182,7 +182,7 @@ final class SceneSimulation {
             let point = SIMD3(center.x, terrain.height(at: SIMD2(center.x, center.z)), center.z)
             bodies[index].groundContact = BodyContact(age: high, center: center, point: point)
             terrain.strike(
-                at: SIMD2(point.x, point.z), radius: body.worldRadius * (body.model.isBolide ? 3.4 : 1.9),
+                at: SIMD2(point.x, point.z), radius: body.craterRadius,
                 direction: SIMD2(body.entryVelocity.x, body.entryVelocity.z), seed: Float(body.id),
                 elapsed: age - high, heat: body.impactHeat,
                 penetration: clamp(body.groundPenetration / body.worldRadius, 0, 1),

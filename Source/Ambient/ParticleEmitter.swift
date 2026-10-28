@@ -91,7 +91,7 @@ final class ParticleEmitter {
     /// Incandescent debris and dust originate at contact. The GPU owns rigid spin, landing and cooling.
     func emitImpact(
         body: SceneBody, at impact: SIMD3<Float>, color: SIMD3<Float>, palette: Int, terrain: SandTerrain,
-        into particles: inout [ParticleGPU]
+        into particles: inout [ParticleGPU], launchOffset: Float = 0
     ) {
         let scale = body.radius
         let collision = body.collision != nil
@@ -117,44 +117,28 @@ final class ParticleEmitter {
             let count = body.model.showerMember == nil ? baseCount : Int(Float(baseCount) * 0.70)
             for _ in 0..<count {
                 let r = random4()
-                // Narrow radial fans carry coarse soil outward; oblique momentum biases their range.
                 let soil = grain || kind == .soilDust
-                let axisAngle = atan2(body.entryVelocity.z, body.entryVelocity.x)
-                let angle =
-                    soil
-                    ? floor(r.x * 17) / 17 * .pi * 2 + axisAngle + (r.z - 0.5) * 0.075
-                    : r.x * .pi * 2
+                let angle = r.x * .pi * 2
                 let depth = r.w * 2 - 1
                 let disk = sqrt(r.z)
-                var origin =
+                let origin =
                     impact + SIMD3(
                         cos(angle) * disk * spread,
                         (collision ? sin(angle) : abs(sin(angle))) * disk * verticalSpread,
                         depth * spread * 0.5) * body.physicalScale
-                if kind == .soilDust || grain {
-                    origin.y = terrain.height(at: SIMD2(origin.x, origin.z)) + 0.015
-                }
                 let lobe = floor(r.x * 9) / 9 * .pi * 2
                 let launch = gas ? lobe + (r.y - 0.5) * 0.35 : angle
                 let direction = SIMD2(cos(launch), collision ? sin(launch) : abs(sin(launch)) * 0.85 + 0.12)
                 let speed =
-                    (kind == .soilDust
-                        ? 0.22 + r.y * 0.48
-                        : gas
-                            ? 0.10 + r.y * 0.23
-                            : kind == .rockFragment ? 0.20 + r.y * 0.44 : 0.16 + r.y * 0.60) * power
+                    (gas ? 0.10 + r.y * 0.23
+                        : kind == .rockFragment ? 0.20 + r.y * 0.44 : 0.16 + r.y * 0.60) * power
                 let size: Float =
-                    grain
-                    ? 0.001 + pow(r.w, 2) * 0.0055
-                    : gas
-                        ? (kind == .soilDust ? 0.014 + r.w * 0.03 : 0.014 + r.w * 0.023) * (0.7 + scale * 1.6)
+                    soil ? 0 : gas
+                        ? (0.014 + r.w * 0.023) * (0.7 + scale * 1.6)
                         : kind == .rockFragment
                             ? (0.003 + pow(r.z, 3) * 0.009) * (0.65 + scale)
                             : 0.0007 + r.w * 0.002
-                let life =
-                    grain
-                    ? 1.8 + r.z * 1.4
-                    : gas ? (kind == .soilDust ? 0.7 + r.z : 1.8 + r.z * 1.1) : 4.5 + r.z * 1.5
+                let life = gas ? 1.8 + r.z * 1.1 : 4.5 + r.z * 1.5
                 // Colored ejecta surround a warm flash; dust itself remains neutral regolith.
                 let ejecta =
                     body.model.showerMember != nil
@@ -165,17 +149,8 @@ final class ParticleEmitter {
                 let tint = kind == .soilDust || grain ? SIMD3<Float>(0.57, 0.59, 0.63) : ejecta
                 let hueShift = SIMD3<Float>(1, 0.72 + r.w * 0.28, 0.65 + r.y * 0.35)
                 let contactState = ParticleDynamics.ballistic.rawValue
-                var velocity =
-                    kind == .soilDust
-                    ? SIMD3(cos(angle) * (0.5 + r.y), 0.35 + r.z * 0.8, sin(angle) * (0.5 + r.y)) * speed
-                        * body.physicalScale
-                    : SIMD3(direction.x, direction.y, depth * 0.45) * speed * body.physicalScale
-                if grain {
-                    velocity =
-                        SIMD3(cos(angle), 0.35 + r.z * 0.95, sin(angle))
-                        * (0.35 + r.y * 0.9) * power * body.physicalScale
-                        + SIMD3(body.entryVelocity.x, 0, body.entryVelocity.z) * 0.18
-                } else if !collision && !gas {
+                var velocity = SIMD3(direction.x, direction.y, depth * 0.45) * speed * body.physicalScale
+                if !soil && !collision && !gas {
                     let elevation = 0.25 + r.z * 0.9
                     velocity =
                         SIMD3(cos(angle), elevation, sin(angle)) * speed * body.physicalScale
@@ -185,16 +160,52 @@ final class ParticleEmitter {
                 let axis = simd_normalize(
                     SIMD3(r.x * 2 - 1, r.z * 2 - 1, r.w * 2 - 1) + SIMD3(repeating: 0.001))
                 let rotation = simd_quatf(angle: r.y * .pi * 2, axis: axis)
-                particles.append(
-                    ParticleGPU(
-                        position: SIMD4(origin.x, origin.y, velocity.x, velocity.y),
-                        life: SIMD4(size * body.physicalScale, 0, life, r.y * 100),
-                        color: SIMD4(tint * hueShift, kind.rawValue),
-                        owner: SIMD4(Float(body.id), contactState, origin.z, velocity.z),
-                        orientation: kind == .rockFragment ? rotation.vector : SIMD4(0, 0, 0, 1),
-                        angular: kind == .rockFragment ? SIMD4(axis * (3 + r.w * 8), 1) : .zero))
+                var particle = ParticleGPU(
+                    position: SIMD4(origin.x, origin.y, velocity.x, velocity.y),
+                    life: SIMD4(size * body.physicalScale, 0, life, r.y * 100),
+                    color: SIMD4(tint * hueShift, kind.rawValue),
+                    owner: SIMD4(Float(body.id), contactState, origin.z, velocity.z),
+                    orientation: kind == .rockFragment || grain ? rotation.vector : SIMD4(0, 0, 0, 1),
+                    angular: kind == .rockFragment || grain ? SIMD4(axis * (3 + r.w * 8), 1) : .zero)
+                if soil {
+                    configureSoil(&particle, body: body, impact: impact, random: r, terrain: terrain)
+                    // GPU advances the whole frame; delay soil until the actual subframe contact.
+                    particle.life.y -= launchOffset
+                }
+                particles.append(particle)
             }
         }
+    }
+
+    /// Gravity-regime excavation scaling, in scene units (g = 3.2), with a finite source core.
+    /// Housen & Holsapple (2011): v ∝ √(gR) x^(-1/μ) (1-x)^p; μ=.41 for granular targets.
+    /// Coefficients and fragment radii are scene approximations, not calibrated material measurements.
+    private func configureSoil(
+        _ particle: inout ParticleGPU, body: SceneBody, impact: SIMD3<Float>,
+        random r: SIMD4<Float>, terrain: SandTerrain
+    ) {
+        let radius = body.craterRadius
+        let gravity: Float = 3.2
+        // Volume-weighted excavation samples. Source radius, time and velocity share one coordinate.
+        let x = pow(0.28 * 0.28 * 0.28 + r.z * (pow(0.96, 3) - pow(0.28, 3)), 1 / 3.0)
+        let angle = r.x * .pi * 2
+        let radial = SIMD2(cos(angle), sin(angle))
+        let speed = sqrt(gravity * radius) * min(3.5, 0.62 * pow(x, -1 / 0.41) * pow(1 - x, 0.35))
+        // Later material is coarser and leaves at a lower angle. No impactor or camera velocity is added.
+        let elevation = (50 - x * 17 + (r.y - 0.5) * 6) * .pi / 180
+        let velocity = SIMD3(radial.x * cos(elevation), sin(elevation), radial.y * cos(elevation)) * speed
+        let point = SIMD2(impact.x, impact.z) + radial * (x * radius)
+        let grain = particle.color.w == ParticleKind.regolithGrain.rawValue
+        let size = radius * (grain ? pow(x, 3) * (0.001 + pow(r.w, 5) * 0.012) : 0.025 + r.w * 0.035)
+        let height = max(impact.y, terrain.height(at: point)) + max(0.008, size * (grain ? 1.1 : 0.2))
+        let delay = sqrt(radius / gravity) * 0.75 * pow((x - 0.28) / 0.68, 1.4)
+        let flight = (velocity.y + sqrt(velocity.y * velocity.y + 2 * gravity * (height - impact.y))) / gravity
+        particle.position = SIMD4(point.x, height, velocity.x, velocity.y)
+        particle.owner.z = point.y
+        particle.owner.w = velocity.z
+        particle.life.x = size
+        particle.life.y = -delay
+        particle.life.z = flight + (grain ? 1.2 : 0.2)
     }
 
     private func random4() -> SIMD4<Float> {

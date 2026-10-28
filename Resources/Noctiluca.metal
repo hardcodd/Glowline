@@ -136,7 +136,12 @@ float chunkSupport(ParticleGPU p) {
     for (uint i = 0; i < 12; i ++) bottom = min(bottom, rotateChunk(p.orientation, chunkCorner(i, p.life.w)).y);
     return - bottom * p.life.x;
 }
+// Coarse regolith reuses opaque rigid geometry; smaller grains remain cheap cards.
+bool rigidParticle(ParticleGPU p) {
+    return p.color.w == particleRockFragment || (p.color.w == particleRegolithGrain && p.life.x >= .04);
+}
 float chunkHeat(ParticleGPU p) {
+    if (p.color.w == particleRegolithGrain) return 0;
     return saturate(1 - p.life.y /(p.owner.y >= dynamicsSettled ? 2.6 : max(.001, p.life.z))) *(p.owner.y >= dynamicsSettled ? p.angular.w : 1);
 }
 /// Deepest actual vertex contact, including terrain slope under the entire rock footprint.
@@ -166,14 +171,14 @@ ParticleGPU evolveRock(ParticleGPU p, float dt, const device float4 * terrain) {
     uint steps = uint(clamp(ceil(dt * 120), 1.0, 32.0));
     float h = dt / float(steps), inertia = max(.00001, p.life.x * p.life.x * .4);
     for (uint step = 0; step < steps; step ++) {
+        // Exact free-flight displacement in vacuum; contact alone dissipates energy.
+        pos += vel * h - float3(0, 1.6 * h * h, 0);
         vel.y -= 3.2 * h;
-        vel *= exp(- h * .045);
         float spin = length(p.angular.xyz);
         if (spin > .0001) {
             float angle = spin * h * .5;
             p.orientation = normalize(multiplyRotation(float4(p.angular.xyz / spin * sin(angle), cos(angle)), p.orientation));
         }
-        pos += vel * h;
         p.position.xy = pos.xy;
         p.owner.z = pos.z;
         if (pos.y - sandField(pos.xz, terrain).x > p.life.x * 1.5) continue;
@@ -210,7 +215,7 @@ ParticleGPU evolveRock(ParticleGPU p, float dt, const device float4 * terrain) {
                 p.angular.w = chunkHeat(p);
                 p.owner.y = dynamicsSettled;
                 p.life.y = 0;
-                p.life.z = 8;
+                p.life.z = p.color.w == particleRegolithGrain ? 1.25 : 8;
                 deposited = true;
             }
             break;
@@ -236,7 +241,17 @@ const device float4 * terrain [[buffer(4)]], uint id [[thread_position_in_grid]]
     }
     if (p.life.z <= 0 || p.life.y >= p.life.z) return;
     float dt = f.controls.x;
-    if (p.color.w == particleRockFragment) {
+    // Negative age schedules the excavation plume; waiting particles neither render nor integrate gravity.
+    if (p.life.y < 0) {
+        p.life.y += dt;
+        if (p.life.y <= 0) {
+            particles[id] = p;
+            return;
+        }
+        dt = p.life.y;
+        p.life.y = 0;
+    }
+    if (rigidParticle(p)) {
         particles[id] = evolveRock(p, dt, terrain);
         return;
     }
@@ -252,13 +267,11 @@ const device float4 * terrain [[buffer(4)]], uint id [[thread_position_in_grid]]
         particles[id] = p;
         return;
     }
-    if (grain) {
+    bool soil = grain || p.color.w == particleSoilDust;
+    if (soil) {
+        // The position update below uses the end velocity: restore half of the gravity increment.
+        pos.y += 1.6 * dt * dt;
         vel.y -= dt * 3.2;
-        vel *= exp(- dt * .35);
-    }
-    else if (p.color.w == particleSoilDust) {
-        vel.y -= dt * .65;
-        vel *= exp(- dt * .65);
     }
     else if (p.color.w == particleEmber && p.owner.y < 0) {
         // Ablation sparks stay in the wake. They do not acquire the gravity of impact fragments.
@@ -312,6 +325,10 @@ const device float4 * terrain [[buffer(4)]], uint id [[thread_position_in_grid]]
             p.life.y = 0;
             p.life.z = grain ? .45 : 2 + .8 * latticeNoise(float3(p.life.w, 1, 3));
         }
+    }
+    else if (p.color.w == particleSoilDust && vel.y < 0 && pos.y <= floor) {
+        // A dust packet deposits at contact; vacuum has neither buoyant clouds nor hovering ground fog.
+        p.life.z = 0;
     }
     else if (! solid && pos.y < floor) {
         pos.y = floor + .005;
@@ -533,7 +550,7 @@ uint id [[thread_position_in_grid]]) {
     if (id == 0) atomic_store_explicit(arguments, 240, memory_order_relaxed);
     if (id >= f.counts.x) return;
     ParticleGPU p = particles[id];
-    if (p.color.w == particleRockFragment && p.life.z > 0 && p.life.y < p.life.z) {
+    if (rigidParticle(p) && p.life.z > 0 && p.life.y >= 0 && p.life.y < p.life.z) {
         uint slot = atomic_fetch_add_explicit(arguments + 1, 1, memory_order_relaxed);
         indices[slot] = id;
     }
@@ -550,7 +567,7 @@ const device uint * indices [[buffer(3)]], const device float4 * terrain [[buffe
     Raster out = {
     }
     ;
-    if (p.color.w != particleRockFragment || p.life.z <= 0 || p.life.y >= p.life.z) {
+    if (!rigidParticle(p) || p.life.z <= 0 || p.life.y < 0 || p.life.y >= p.life.z) {
         out.position = float4(0, 0, - 1, 1);
         return out;
     }
@@ -568,7 +585,8 @@ const device uint * indices [[buffer(3)]], const device float4 * terrain [[buffe
     vertices[tetraFaces[face + 2]] - vertices[tetraFaces[face]]));
     if (dot(normal, vertices[tetraFaces[face]] - center) < 0) normal = - normal;
     float3 position = float3(p.position.xy, p.owner.z);
-    float burn = p.owner.y >= dynamicsSettled ? max(0.0, p.life.y -(.65 + .7 * latticeNoise(float3(p.life.w, cell, 8)))) : 0;
+    bool soil = p.color.w == particleRegolithGrain;
+    float burn = !soil && p.owner.y >= dynamicsSettled ? max(0.0, p.life.y -(.65 + .7 * latticeNoise(float3(p.life.w, cell, 8)))) : 0;
     float4 rotation = p.orientation;
     float separation = 1;
     if (burn > 0) {
@@ -594,7 +612,8 @@ const device uint * indices [[buffer(3)]], const device float4 * terrain [[buffe
     out.local = local;
     out.color = p.color;
     out.data = float4(chunkHeat(p), p.life.w, p.life.y, p.owner.y);
-    out.extra = float4(saturate((burn - .65) / 1.7), float(cell), 0, 0);
+    float erosion = soil && p.owner.y >= dynamicsSettled ? smoothstep(.3, 1.2, p.life.y) : saturate((burn - .65) / 1.7);
+    out.extra = float4(erosion, float(cell), 0, 0);
     return out;
 }
 /// Identical falloff, flash energy and diffuse response integrate soil and debris under later events.
@@ -641,10 +660,15 @@ const device float4 * terrain [[buffer(2)]]) {
     ParticleGPU p = particles[instance];
     Raster out;
     float a = p.life.y / max(.001, p.life.z);
-    bool alive = p.life.z > 0 && a < 1 && p.color.w != particleRockFragment, hot = p.color.w == particleEmber;
-    float size = p.life.x *(hot || p.color.w == particleRegolithGrain ? 1 :(1 + a *(p.color.w == particleSoilDust ? .65 : 2.1)));
+    bool alive = p.life.z > 0 && p.life.y >= 0 && a < 1 && !rigidParticle(p), hot = p.color.w == particleEmber;
+    float size = p.life.x *(hot || p.color.w == particleRegolithGrain || p.color.w == particleSoilDust ? 1 :(1 + a * 2.1));
     float angle = hot ? atan2(p.position.w, p.position.z) : p.life.w + a * .25;
     float2 shape = corners[vid];
+    if (p.color.w == particleRegolithGrain && p.owner.y < dynamicsSettled) {
+        // Tumbling changes the projected face without stretching its ballistic trajectory.
+        angle = p.life.w + p.life.y * (3 + fract(p.life.w) * 7);
+        shape *= float2(.7 + .3 * abs(cos(p.life.y * 7 + p.life.w)), .85);
+    }
     if (p.color.w == particleEmber) shape.x *= 1 + min(4.0, length(p.position.zw) * 2);
     if (p.color.w == particleImpactGas) shape *= float2(1.15, .88);
     float2 rotated = float2(shape.x * cos(angle) - shape.y * sin(angle), shape.x * sin(angle) + shape.y * cos(angle));
@@ -684,9 +708,13 @@ half4 particleLight(Raster in, texture2d < float > map, float2 p) {
     float d = length(p), a = in.data.x, seed = in.data.y;
     float3 c = in.color.rgb, hot = mix(c, float3(1, .72, .34), .36);
     if (in.color.w == particleRegolithGrain) {
-        float edge = 1 - smoothstep(.45, .85, length(p * float2(1, 1.3)));
+        float angle = atan2(p.y, p.x);
+        float radius = .68 + .10 * sin(angle * 3 + seed) + .07 * sin(angle * 7 - seed);
+        float edge = 1 - smoothstep(radius - .045, radius, length(p));
         float alpha = edge *(in.impact.x >= 2 ? pow(1 - a, 1.5) : 1);
-        return half4(half3(c *(.3 + .5 * saturate(p.y + .5)) * alpha), half(alpha));
+        float facet = .35 + .65 * saturate(.5 + p.y * .7 - p.x * .45);
+        float grit = .75 + .25 * volumeNoise(map, float3(p * 13, seed));
+        return half4(half3(c * facet * grit * alpha), half(alpha));
     }
     if (in.impact.x >= 2) {
         hot = coolingColor(a);
@@ -708,10 +736,11 @@ half4 particleLight(Raster in, texture2d < float > map, float2 p) {
     }
     if (in.color.w == particleSoilDust) {
         if (d > 1) discard_fragment();
-        float billow = fbm(map, p * 4 + seed + in.data.z * .18);
-        float alpha = smoothstep(.18 + a * .32, .65 + a * .2, billow) * pow(1 - d * d, 1.1)
-        * smoothstep(0.0, .008, in.data.z) * pow(1 - a, 1.3) * .22;
-        float shade = .6 + billow * .8 - p.x * .15 + p.y * .2;
+        // Unresolved grains travel together as a ballistic packet, with no animated smoke curls.
+        float grit = volumeNoise(map, float3(p * 19, seed));
+        float alpha = smoothstep(.22, .72, grit) * pow(1 - d * d, 1.6)
+        * smoothstep(0.0, .008, in.data.z) * (1 - smoothstep(.85, 1.0, a)) * .28;
+        float shade = .65 + grit * .6;
         return half4(half3(c * shade * alpha), half(alpha));
     }
     if (d > 1) discard_fragment();
@@ -749,8 +778,10 @@ const device BodyGPU * bodies [[buffer(1)]], const device MeltPool * melts [[buf
             BodyGPU body = bodies[i];
             float age = body.shape.z;
             float energy = age < 0 ? body.motion.z * body.position.w : exp(- age * 1.3) *(1 + body.impactEffects.x * 3 * exp(- age * 4));
-            float3 delta = body.spatial.xyz - in.world;
-            illumination += body.color.rgb * energy * body.spatial.w * body.spatial.w * 5 /(dot(delta, delta) + .3);
+            // Contact light stays above the crater while the parent body embeds below the surface.
+            float3 lightPosition = age < 0 ? body.spatial.xyz : body.contact.xyz + float3(0, body.spatial.w * .45, 0);
+            float3 delta = lightPosition - in.world;
+            illumination += body.color.rgb * energy * body.spatial.w * body.spatial.w * 9 /(dot(delta, delta) + .3);
         }
         for (uint i = 0; i < f.thermal.x; i ++) {
             MeltPool pool = melts[i];
@@ -944,6 +975,73 @@ depth2d < float > depth, texture2d < float > map, thread float3 & glow, thread f
     float magnitude = length(displacement);
     return displacement * min(1.0, .045 / max(.00001, magnitude));
 }
+/// Incoming bow caps live in world space. The wider, transparent hot cap precedes the luminous ablation layer.
+/// Ray/sphere intersections clip emission and refraction against opaque geometry, including the body itself.
+float2 incomingAtmosphere(float2 uv, constant FrameUniformsGPU & f, const device BodyGPU * bodies,
+depth2d < float > depth, texture2d < float > map, thread float3 & glow, thread float & frontDepth) {
+    float3 ray = normalize(cameraForward + float3((uv.x - .5) * f.viewport.z / activeHeight(f), 0, 0)
+        + cameraUp * (.5 - uv.y) / activeHeight(f));
+    float z = depth.sample(linearClamp, uv);
+    float opaqueDistance = (5.0 / 99.95) / max(.000001, 100.0 / 99.95 - z) / dot(ray, cameraForward);
+    float2 displacement = 0;
+    glow = 0;
+    frontDepth = 1;
+    for (uint i = 0; i < f.counts.w; i ++) {
+        BodyGPU body = bodies[i];
+        if (body.shape.z >= 0 || body.position.w <= 0 || length(body.flight.xyz) < .5) continue;
+        float fire = smoothstep(.55, 2.4, body.flight.w);
+        float heat = 1 - smoothstep(.12, .32, body.shape.y);
+        if (fire <= 0 && heat <= 0) continue;
+        float3 forward = -normalize(body.flight.xyz);
+        float radius = max(.001, body.spatial.w);
+        // Inner cap burns; outer cap only bends the background. Both open into the existing rear wake.
+        for (uint layer = 0; layer < 2; layer ++) {
+            if ((layer == 0 && fire <= 0) || (layer == 1 && heat <= 0)) continue;
+            float shellRadius = radius * (layer == 0 ? 1.22 : 1.95);
+            float3 center = body.spatial.xyz + forward * radius * (layer == 0 ? .18 : .35);
+            float3 relative = cameraOrigin - center;
+            float along = dot(relative, ray);
+            float closest = dot(relative, relative) - along * along;
+            float discriminant = shellRadius * shellRadius - closest;
+            if (discriminant <= 0) continue;
+            float chord = sqrt(discriminant);
+            // Both crossings matter when viewing a bow sideways; depth hides the rear crossing of the body.
+            for (uint side = 0; side < 2; side ++) {
+                float distance = -along + (side == 0 ? -chord : chord);
+                if (distance <= .05 || distance >= opaqueDistance) continue;
+                float3 point = cameraOrigin + ray * distance;
+                float3 normal = (point - center) / shellRadius;
+                float leading = smoothstep(.02, .52, dot(normal, forward));
+                if (leading <= 0) continue;
+                float3 flow = (point - body.spatial.xyz) / radius;
+                float time = f.viewport.w;
+                float turbulence = volumeNoise(map, flow * 5 + body.motion.w + forward * time * 9);
+                float fine = volumeNoise(map, flow * 13 - forward * time * 17 + body.motion.w);
+                float limb = pow(1 - abs(dot(normal, ray)), 2.0);
+                if (layer == 0) {
+                    // Broken tongues around a bright compressed nose, rather than a solid luminous shield.
+                    float tongues = smoothstep(.24, .74, turbulence * .7 + fine * .3);
+                    float edgeFade = smoothstep(0.0, .22, chord / shellRadius);
+                    float density = leading * (.012 + limb * limb * limb) * tongues * tongues
+                        * edgeFade * fire * 3.8;
+                    float3 flame = mix(body.color.rgb, float3(1, .62, .22), .26);
+                    flame = mix(flame, float3(1, .9, .65), tongues * .3);
+                    glow += flame * density * 1.65;
+                } else {
+                    float4 projected = project(point, f);
+                    frontDepth = min(frontDepth, projected.z / projected.w);
+                    float2 gradient = float2(normal.x, -dot(normal, cameraUp));
+                    float2 shimmer = float2(turbulence - .5, fine - .5);
+                    float angularRadius = shellRadius / max(.1, length(relative));
+                    float strength = min(.035, angularRadius * .16) * heat * leading;
+                    displacement += (gradient * (.3 + limb) + shimmer * .85) * strength
+                        * float2(1 / f.viewport.z, 1);
+                }
+            }
+        }
+    }
+    return displacement * min(1.0, .04 / max(.00001, length(displacement)));
+}
 fragment half4 compositeFragment(Raster in [[stage_in]], constant FrameUniformsGPU & f [[buffer(0)]],
 texture2d < float > scene [[texture(0)]], texture2d < float > material [[texture(1)]],
 depth2d < float > depth [[texture(3)]], texture2d < float > map [[texture(4)]],
@@ -958,6 +1056,12 @@ const device BodyGPU * bodies [[buffer(1)]]) {
         // Never pull a closer silhouette across a background shell'body optical boundary.
         float there = depth.sample(linearClamp, warped);
         if (there >= frontDepth - .00001) uv = warped;
+    }
+    float3 incomingGlow = 0;
+    if (f.thermal.z > 0) {
+        float2 offset = incomingAtmosphere(uv, f, bodies, depth, map, incomingGlow, frontDepth);
+        float2 warped = clamp(uv + offset, float2(0), float2(1));
+        if (depth.sample(linearClamp, warped) >= frontDepth - .00001) uv = warped;
     }
     float3 light = scene.sample(linearClamp, uv).rgb;
     float2 pixel = 1.0 / float2(material.get_width(), material.get_height());
@@ -991,7 +1095,7 @@ const device BodyGPU * bodies [[buffer(1)]]) {
         }
     }
     float transmittance = 1 - saturate(material.sample(linearClamp, uv).a);
-    light =(light + rockGlow) * transmittance + gas + bloom * .09 + shockGlow;
+    light =(light + rockGlow) * transmittance + gas + bloom * .09 + shockGlow + incomingGlow;
     light *= f.controls.y * f.options.x;
     float3 mapped = 1 - exp(- light * 1.15);
     if (f.options.y < .5) {

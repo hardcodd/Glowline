@@ -290,7 +290,10 @@ final class MetalRenderer {
                 UInt32(terrain.meltPools.count),
                 UInt32(
                     frame.bodies.filter { $0.impactEffects.x > 0 && $0.shape.z > 0 && $0.shape.z < 1.6 }.count
-                ), 0, 0))
+                ), UInt32(frame.bodies.filter {
+                    $0.shape.z < 0 && $0.position.w > 0
+                        && simd_length(SIMD3($0.flight.x, $0.flight.y, $0.flight.z)) > 0.5
+                }.count), 0))
         spawnHead = (spawnHead + frame.newParticles.count) % Self.capacity
         guard let command = queue.makeCommandBuffer(), let clear = command.makeBlitCommandEncoder() else {
             throw RenderFailure.unavailable("Frame command failed")

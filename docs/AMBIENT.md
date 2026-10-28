@@ -26,6 +26,53 @@ Terrain uses local active regions and a fixed 1/120-second physics step. Craters
 persist for the session; pausing or resizing does not reset them. Only the massive
 superheated class creates colored melt pools. Ordinary impacts retain solid debris.
 
+Soil leaves ground impacts in an expanding ballistic curtain. Craters retain moderate bowls
+and nearly circular low rims; thinner ejecta rays spread farther across the surface.
+The simple-crater profile joins a concave bowl directly to its crest, with a broad
+cubically tapering exterior shoulder. Small rim irregularities replace scalloped
+outlines; appreciable elongation is reserved for grazing incidence. Cold impacts
+leave fractured gray regolith rather than a soot-black floor. The visual reference
+is [NASA's lunar crater overview](https://science.nasa.gov/moon/lunar-craters/);
+vertical relief remains deliberately compressed to preserve later impact visibility.
+Ejecta start at the struck surface, above the newly excavated bowl. `SceneBody.craterRadius`
+is shared by excavation and emission. Source radius x/R grows with launch delay;
+speed scales as √(gR) (x/R)^(-1/μ) (1-x/R)^p with μ=0.41 and a finite core/capped
+maximum speed. Early fine material travels farther; later coarser material stays
+near the rim. Angles decrease from about 48° to 34°. Soil does not inherit the
+impactor's velocity. Grain radii stay below 1.3% of crater radius; dust cards
+represent unresolved grain packets, not individual large fragments.
+All airborne soil, dust and rigid fragments use g=3.2 scene units/s² without air
+drag and exact constant-gravity displacement between contacts. Dust deposits
+on contact without buoyancy, animated smoke curls or billowing size growth.
+Launch duration scales with √(R/g). The contact core opens immediately; an
+excavation front then expands on the same clock as the launch annulus. Each local
+fracture unfolds over at most 65 ms rather than lowering the whole bowl together.
+Each annulus lifts into a temporary crest before local excavation consumes it;
+the crest travels outward and leaves the terminal rim in place. A broad exterior
+pressure shoulder moves ahead of excavation rather than inflating on one global
+clock. Delayed fallout fades in beyond 1.35 crater radii; only this thin distant
+apron lands later over 180 ms windows. Arrival depends on crater size and distance.
+Signed incremental edits preserve overlapping
+strikes. Scorch and molten coverage follow the newly exposed ground.
+Coarse regolith (world radius parameter at least 0.04) uses the existing opaque
+rigid-chunk pass, including tumble, contact and friction, with no incandescent
+emission. Smaller grains and broken dust use lighter particle cards. Negative
+particle age schedules a launch; waiting material neither draws nor integrates
+gravity, and pause freezes the delay. The first GPU frame also includes the
+offset from frame start to the resolved contact, preventing pre-impact flight.
+Local slope work remains active until
+the final terrain packets have landed.
+The velocity law follows [Housen & Holsapple (2011)](https://data.boulder.swri.edu/ksinger/Papers/Housen%26Holsapple_2011_Ejecta_from_Impact_craters_Icarus.pdf);
+the qualitative size/time ordering follows [Lunar Sourcebook, chapter 4](https://www.lpi.usra.edu/publications/books/lunar_sourcebook/pdf/Chapter04.pdf).
+Coefficients, fragment sizes and optical packet density are scene approximations;
+this is not a calibrated hydrocode or a meter/second reconstruction of a real impact.
+Crater radius uses a bounded scene approximation proportional to the fourth root
+of kinetic impact energy, shared with the ejecta source (0.38...4 units).
+Single-hit depth is 0.10...0.22 units; the accumulated floor stops at −0.28,
+keeping later small impacts visible. New deposits stop at 0.14, below the fixed camera.
+Dry slope collapse and shock transport remain conservative; initial excavation
+and the artistic ejecta profile are not a complete mass-balance simulation.
+
 `BodyModel` distinguishes `meteor`, `superheatedAsteroid`, `bolide` and
 `showerMeteor(Member)`. Only `superheatedAsteroid` has a `lavaLake` ground impact;
 the other models produce fragments. `BodyArrival` describes a scheduling request,
@@ -49,6 +96,16 @@ The renderer uses three completion-protected upload slots and queue-ordered GPU
 resources. Opaque terrain, bodies and chunks write depth before flashes; vapor and
 the final HDR/refraction pass use that depth. CPU fingerprints alone cannot verify
 the Metal boundary: run the GPU contracts and inspect displayed output too.
+
+Incoming bodies have a turbulent ablation cap ahead of flight. Fire grows with
+visible speed; a separate, wider thermal cap refracts the background only for
+superheated bodies, independently of speed. Both caps use world-space ray
+intersections and opaque depth, disappear on contact, and freeze with scene time.
+`BodyGPU.flight.xyz` is the unit rear direction; `.w` carries birth reference speed
+in image heights per scene second. `FrameUniformsGPU.thermal.z` counts incoming
+atmosphere sources. Neither field changes the existing aligned structure sizes.
+Refraction needs visible background detail; it cannot make an empty black field
+visibly bend. The benchmark includes `metal-incoming.png` for isolated fire/heat review.
 
 `build.py` discovers all Ambient Swift files. Standalone terrain/GPU commands in the
 build guide explicitly include the simulation modules. Structural refactors should

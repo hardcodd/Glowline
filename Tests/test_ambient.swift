@@ -21,6 +21,8 @@ func runAmbientMotionTests() {
             grains += frame.newParticles.filter { $0.color.w == 7 }.count
             precondition(frame.newParticles.count <= 4096)
             precondition(frame.bodies.first?.impactEffects.x == 1)
+            precondition(frame.bodies.first?.flight.w == bolide.screenSpeed,
+                         "Incoming fire must receive visible speed independently of crust heat")
         }
         precondition(
             flight.terrain.impactCount == 1 && fragments > 80 && flight.terrain.meltPools.isEmpty,

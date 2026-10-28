@@ -147,6 +147,26 @@ import MetalKit
             }
         }
         print("PASS: 32 rigid-contact trajectories at 30/72/144 Hz and 100 ms frames")
+        // Vacuum flight must be independent of cadence and material size, including unresolved dust.
+        for kind in [ParticleKind.regolithGrain, .soilDust, .rockFragment] {
+            for cadence: Float in [1 / 30, 1 / 72, 1 / 144] {
+                var airborne = ParticleGPU(
+                    position: SIMD4(0, 10, 0.6, 0.8), life: SIMD4(0.015, 0, 5, 7),
+                    color: SIMD4(0.57, 0.59, 0.63, kind.rawValue), owner: SIMD4(2, 1, -5, 0.3))
+                withUnsafeBytes(of: &airborne) {
+                    state.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count)
+                }
+                let steps = Int(round(0.5 / cadence))
+                for _ in 0..<steps { airborne = try step(cadence) }
+                let time = Float(steps) * cadence
+                precondition(abs(airborne.position.x - 0.6 * time) < 0.0001
+                    && abs(airborne.owner.z - (-5 + 0.3 * time)) < 0.0001
+                    && abs(airborne.position.y - (10 + 0.8 * time - 1.6 * time * time)) < 0.0001
+                    && abs(airborne.position.w - (0.8 - 3.2 * time)) < 0.0001,
+                    "Soil, dust and rocks must share exact gravity without air drag")
+            }
+        }
+        print("PASS: analytic vacuum ballistics for dust, grains and rigid fragments at three cadences")
         var grain = ParticleGPU(
             position: SIMD4(0, 0.8, 0.5, 0.4), life: SIMD4(0.015, 0, 3.2, 11),
             color: SIMD4(0.57, 0.59, 0.63, 7), owner: SIMD4(2, 1, -5, 0.3))
@@ -170,6 +190,18 @@ import MetalKit
         let fadedGrain = try step(0)
         precondition(
             fadedGrain.life.y >= 0.45, "Settled grains must fade without acquiring a hot cooling phase")
+        grain.life.y = -0.2
+        withUnsafeBytes(of: &grain) {
+            state.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count)
+        }
+        let waitingGrain = try step(0.1)
+        precondition(waitingGrain.position == grain.position && waitingGrain.owner == grain.owner,
+                     "Delayed ejecta must not fall underground while waiting to erupt")
+        let waitingPause = try step(0)
+        precondition(waitingPause.life == waitingGrain.life, "Pause must freeze the eruption delay")
+        let launchedGrain = try step(0.15)
+        precondition(launchedGrain.position != grain.position && launchedGrain.life.y > 0,
+                     "Crossing the launch time must animate only the remaining frame interval")
         var tailSpark = ParticleGPU(
             position: SIMD4(0, 3, 0, -0.08), life: SIMD4(0.01, 0, 4, 9),
             color: SIMD4(1, 0.6, 0.1, 1), owner: SIMD4(1, -1, -5, 0))
@@ -291,6 +323,22 @@ import MetalKit
             "Crumbling removes material cells without alpha-fading the rock")
         precondition(coldOpaque != opaque, "Cooling must extinguish emission instead of fading geometry")
 
+        var clod = frontRock
+        clod.color = SIMD4(0.57, 0.59, 0.63, ParticleKind.regolithGrain.rawValue)
+        clod.owner.y = ParticleDynamics.ballistic.rawValue
+        clod.life.y = 0.1
+        let soilOpaque = try rockPixels([clod])
+        precondition(stride(from: 3, to: soilOpaque.count, by: 4).filter { soilOpaque[$0] == 0x3c00 }.count > 100,
+                     "Coarse soil must use solid depth-writing geometry rather than transparent dust cards")
+        clod.life.y = 0.5
+        let laterClod = try rockPixels([clod])
+        precondition(laterClod == soilOpaque,
+                     "Dry clods must reflect light without glowing or incandescent cooling")
+        clod.life.y = -0.1
+        let hiddenClod = try rockPixels([clod])
+        precondition(hiddenClod.allSatisfy { $0 == 0 },
+                     "Scheduled coarse clods must remain invisible until launch")
+
         // Dense vapor must attenuate rear geometry, otherwise rocks look pasted over illuminated smoke.
         let compositeDescriptor = MTLRenderPipelineDescriptor()
         compositeDescriptor.vertexFunction = library.makeFunction(name: "screenVertex")
@@ -375,7 +423,7 @@ import MetalKit
             motion: SIMD4(-4.8, 0.3, 0, 7), cloud: .zero, shape: SIMD4(0, 0, 0.3, 0.1),
             spatial: SIMD4(0, 1.82, -4.8, 0.5), contact: SIMD4(0, 1.82, -4.8, 0),
             impactEffects: SIMD4(1, 0, 0, 0))
-        func lensImage(_ event: BodyGPU, enabled: Bool = true, depthValue: Double = 1, fade: Float = 1)
+        func lensImage(_ event: BodyGPU, enabled: Bool = true, depthValue: Double = 1, fade: Float = 1, time: Float = 0)
             -> [Float16]
         {
             let command = queue.makeCommandBuffer()!
@@ -391,9 +439,9 @@ import MetalKit
             pass.colorAttachments[0].storeAction = .store
             let encoder = command.makeRenderCommandEncoder(descriptor: pass)!
             var frame = FrameUniformsGPU(
-                viewport: SIMD4(256, 144, 256 / 144, 0), controls: SIMD4(0, 1, 0, 0),
+                viewport: SIMD4(256, 144, 256 / 144, time), controls: SIMD4(0, 1, 0, 0),
                 counts: SIMD4(0, 0, 0, 1), options: SIMD4(fade, 1, 0, 0),
-                thermal: SIMD4(0, enabled ? 1 : 0, 0, 0))
+                thermal: SIMD4(0, enabled ? 1 : 0, enabled ? 1 : 0, 0))
             var event = event
             encoder.setRenderPipelineState(compositePipeline)
             encoder.setFragmentBytes(&frame, length: MemoryLayout<FrameUniformsGPU>.stride, index: 0)
@@ -478,6 +526,53 @@ import MetalKit
         _ = lensImage(shell)
         precondition(
             lensImage(shell, fade: 0).enumerated().allSatisfy { $0.offset % 4 == 3 || $0.element == 0 })
+
+        // Incoming heat depends on crust, while bow fire depends on speed. Flight points rearward.
+        var incoming = BodyGPU(
+            position: SIMD4(0, 0, 0.1, 1), color: SIMD4(1, 0.22, 0.04, 1),
+            motion: SIMD4(0, -1, 0, 7), cloud: .zero, shape: SIMD4(0, 0, -1, 0.1),
+            spatial: SIMD4(0, 1.82, -4.8, 0.5), flight: SIMD4(SceneCamera.up, 0.4))
+        let incomingPlain = lensImage(incoming, enabled: false)
+        let hotBow = lensImage(incoming)
+        let forwardDarkened = (73..<108).reduce(0) { count, y in
+            count + (100..<156).filter {
+                hotBow[(y * 256 + $0) * 4] < incomingPlain[(y * 256 + $0) * 4] - 0.02
+            }.count
+        }
+        precondition(forwardDarkened > 40, "Slow superheated bodies must visibly refract ahead of flight")
+        precondition(lensImage(incoming) == hotBow, "Paused incoming heat must remain stable")
+        precondition(lensImage(incoming, time: 0.2) != hotBow, "Thermal turbulence must evolve with scene time")
+        let rearDarkened = (36..<60).reduce(0) { count, y in
+            count + (100..<156).filter {
+                hotBow[(y * 256 + $0) * 4] < incomingPlain[(y * 256 + $0) * 4] - 0.02
+            }.count
+        }
+        precondition(rearDarkened == 0, "Thermal cap must remain ahead of the body rather than surrounding it")
+        precondition(
+            lensImage(incoming, depthValue: 0.95) == lensImage(incoming, enabled: false, depthValue: 0.95),
+            "Opaque foreground must hide both incoming fire and thermal refraction")
+        incoming.shape.y = 1
+        precondition(lensImage(incoming) == incomingPlain, "Slow cold bodies must have no atmospheric effect")
+        incoming.flight.w = 4.8
+        let coldFire = lensImage(incoming)
+        let firePixels = stride(from: 0, to: coldFire.count, by: 4).filter {
+            coldFire[$0] > incomingPlain[$0] + 0.03
+        }.count
+        let coldDarkened = stride(from: 0, to: coldFire.count, by: 4).filter {
+            coldFire[$0] < incomingPlain[$0] - 0.005
+        }.count
+        precondition(firePixels > 40 && coldDarkened == 0, "Fast cold bodies burn without thermal lensing")
+        let forwardFire = (73..<108).reduce(0) { count, y in
+            count + (100..<156).filter {
+                coldFire[(y * 256 + $0) * 4] > incomingPlain[(y * 256 + $0) * 4] + 0.03
+            }.count
+        }
+        precondition(forwardFire > firePixels * 3 / 4, "Ablation fire must sit ahead of flight")
+        incoming.flight = SIMD4(-SceneCamera.up, 4.8)
+        precondition(lensImage(incoming) != coldFire, "Changing flight direction must turn the fire cap")
+        incoming.shape.z = 0
+        precondition(lensImage(incoming) == incomingPlain, "Incoming effects must stop at contact")
+        print("PASS: incoming forward fire, heat-only lensing, depth, pause, turbulence, flight alignment and contact cutoff")
         print(
             "PASS: spherical shock refraction, opaque depth, fixed contact, perspective, pause, expiry and finite inside-shell rays"
         )
@@ -506,6 +601,37 @@ import MetalKit
             return bytes
         }
         let output = target(860, 360)
+        let eruptionRenderer = try MetalRenderer(shaderURL: url)
+        let eruptionTerrain = SandTerrain()
+        eruptionTerrain.strike(at: SIMD2(0, -5), radius: 1.5, direction: SIMD2(1, 0), seed: 79)
+        let eruptionBody = SceneBody(id: 79, birth: 0, seed: 1)
+        var ejecta: [ParticleGPU] = []
+        ParticleEmitter(seed: 17).emitImpact(
+            body: eruptionBody, at: SIMD3(0, 0, -5), color: SIMD3(1, 0.4, 0.1), palette: 0,
+            terrain: eruptionTerrain, into: &ejecta)
+        ejecta = ejecta.filter { $0.color.w == ParticleKind.regolithGrain.rawValue || $0.color.w == ParticleKind.soilDust.rawValue }
+        let soilLight = BodyGPU(
+            position: .zero, color: SIMD4(1, 0.5, 0.2, 79), motion: SIMD4(-5, 0.3, 0, 7), cloud: .zero,
+            shape: SIMD4(0, 1, 0.3, 0.1), spatial: SIMD4(0, 0, -5, 0.8), contact: SIMD4(0, 0, -5, 1))
+        let bareSoil = try pixels(output, time: 0.4, bodies: [soilLight], field: eruptionTerrain)
+        for frame in 0..<24 {
+            let command = try eruptionRenderer.render(
+                frame: SimulationFrame(bodies: [soilLight], newParticles: frame == 0 ? ejecta : [], terrain: eruptionTerrain),
+                time: Float(frame + 1) / 60, delta: 1 / 60, brightness: 1, fade: 1, fill: true, output: output)
+            command.waitUntilCompleted()
+            precondition(command.status == .completed)
+        }
+        var eruptingSoil = [UInt8](repeating: 0, count: output.width * output.height * 4)
+        output.getBytes(&eruptingSoil, bytesPerRow: output.width * 4,
+                       from: MTLRegionMake2D(0, 0, output.width, output.height), mipmapLevel: 0)
+        let visibleSoil = (0..<Int(Float(output.height) * 0.77)).reduce(0) { total, y in
+            total + (0..<output.width).filter { x in
+                let i = (y * output.width + x) * 4
+                return (0..<3).contains { abs(Int(eruptingSoil[i + $0]) - Int(bareSoil[i + $0])) > 12 }
+            }.count
+        }
+        precondition(visibleSoil > 120, "Animated soil must visibly clear the crater horizon in the final composite")
+        print("PASS: visible airborne soil pixels above crater horizon:", visibleSoil)
         let first = try pixels(output, time: 0)
         let ambientPeak = stride(from: 0, to: first.count, by: 4).map {
             max(first[$0], first[$0 + 1], first[$0 + 2])

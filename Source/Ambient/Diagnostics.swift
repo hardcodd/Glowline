@@ -58,6 +58,25 @@ func benchmark(shader: URL, directory: URL) throws {
         }
     }
     let stats = renderer.metrics.snapshot()
+    // A short actual-contact sequence makes outward flight, tumbling and settling reviewable in motion.
+    for (name, id) in [("ejecta-motion", 79), ("meteor-ejecta-motion", 91)] {
+        let body = SceneBody(id: id, birth: 0, seed: 1, depthScale: 1, depthDirection: 0)
+        let eruption = SceneSimulation(seed: 17, bodies: [body], time: body.groundAge - 0.2)
+        let motionDirectory = directory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: motionDirectory, withIntermediateDirectories: true)
+        for frame in 0..<100 {
+            let sample = eruption.advance(delta: 1 / 30, aspect: aspect, palette: 0, births: false)
+            let command = try renderer.render(
+                frame: sample, time: Float(eruption.time), delta: 1 / 30,
+                brightness: 1, fade: 1, fill: true, output: output, reset: frame == 0)
+            command.waitUntilCompleted()
+            if command.status == .error {
+                throw command.error ?? RenderFailure.unavailable("Soil eruption capture failed")
+            }
+            try writePNG(texture: output, to: motionDirectory.appendingPathComponent(String(format: "%03d.png", frame)))
+        }
+        captures.append("\(name)/000.png ... 099.png")
+    }
     // A fixed size catalog makes body shape and trajectory alignment inspectable without waiting for arrivals.
     let candidates = (0..<10000).map {
         SceneBody(id: $0, birth: 0, seed: 13.7, depthScale: 1, depthDirection: 0)
@@ -85,6 +104,76 @@ func benchmark(shader: URL, directory: URL) throws {
     }
     try writePNG(texture: output, to: directory.appendingPathComponent("metal-appearance.png"))
     captures.append("metal-appearance.png")
+    // Fixed incoming examples isolate speed-driven fire from heat-driven refraction for visual review.
+    let incoming = (0..<2).map { index -> BodyGPU in
+        let center = SceneCamera.world(SIMD2(index == 0 ? -0.55 : 0.55, 0.12), distance: 6)
+        return BodyGPU(
+            position: SIMD4(0, 0, 0.1, 1),
+            color: SIMD4(index == 0 ? SIMD3(1, 0.17, 0.035) : SIMD3(0.25, 0.6, 1), Float(index)),
+            motion: SIMD4(0, -1, 1, 7 + Float(index) * 23), cloud: .zero,
+            shape: SIMD4(0, index == 0 ? 1 : 0, -1, 0.1),
+            spatial: SIMD4(center, index == 0 ? 0.38 : 0.7),
+            flight: SIMD4(
+                simd_normalize(SceneCamera.up + SIMD3(index == 0 ? -0.5 : 0.4, 0, 0)),
+                index == 0 ? 4.8 : 1.1))
+    }
+    let incomingCommand = try renderer.render(
+        frame: SimulationFrame(bodies: incoming, newParticles: []), time: 20, delta: 0,
+        brightness: 1, fade: 1, fill: true, output: output, reset: true)
+    incomingCommand.waitUntilCompleted()
+    if incomingCommand.status == .error {
+        throw incomingCommand.error ?? RenderFailure.unavailable("Incoming atmosphere catalog failed")
+    }
+    try writePNG(texture: output, to: directory.appendingPathComponent("metal-incoming.png"))
+    captures.append("metal-incoming.png")
+    // Near-camera accumulation is the worst view for low crater rims; include repeated pressure transport.
+    let foreground = SandTerrain()
+    for index in 0..<80 {
+        foreground.strike(
+            at: SIMD2(sin(Float(index) * 2.4) * 1.2, -2 + cos(Float(index) * 1.7) * 0.7),
+            radius: 0.6 + Float(index % 5) * 0.22, direction: SIMD2(1, 0.4),
+            seed: Float(index), obliquity: 0.6)
+        if index % 8 == 0 {
+            foreground.launchShock(at: SIMD2(0, -3), bodyRadius: 0.5, direction: SIMD2(1, 0), seed: Float(index))
+        }
+        foreground.advance(delta: 0.4)
+    }
+    foreground.advance(delta: 3)
+    let lights = (0..<3).map { index in
+        BodyGPU(
+            position: .zero, color: SIMD4(bodyColor(Float(index) * 0.23, palette: 0), Float(index)),
+            motion: .zero, cloud: .zero, shape: SIMD4(0, 1, 0.15, 0.1),
+            spatial: SIMD4(Float(index - 1) * 3, 2, -5, 1.2))
+    }
+    // Isolate cavity growth from the flash, airborne debris and molten floor.
+    let formation = SandTerrain()
+    let formationDirectory = directory.appendingPathComponent("crater-formation")
+    try FileManager.default.createDirectory(at: formationDirectory, withIntermediateDirectories: true)
+    for frame in 0..<90 {
+        if frame == 6 {
+            formation.strike(at: SIMD2(0, -5), radius: 1.5, direction: SIMD2(1, 0.3), seed: 7)
+        }
+        if frame > 6 { formation.advance(delta: 1 / 60) }
+        let command = try renderer.render(
+            frame: SimulationFrame(bodies: lights, newParticles: [], terrain: formation),
+            time: Float(frame) / 60, delta: 1 / 60,
+            brightness: 1, fade: 1, fill: true, output: output, reset: frame == 0)
+        command.waitUntilCompleted()
+        if command.status == .error {
+            throw command.error ?? RenderFailure.unavailable("Crater formation capture failed")
+        }
+        try writePNG(texture: output, to: formationDirectory.appendingPathComponent(String(format: "%03d.png", frame)))
+    }
+    captures.append("crater-formation/000.png ... 089.png")
+    let terrainCommand = try renderer.render(
+        frame: SimulationFrame(bodies: lights, newParticles: [], terrain: foreground),
+        time: 40, delta: 0, brightness: 1, fade: 1, fill: true, output: output, reset: true)
+    terrainCommand.waitUntilCompleted()
+    if terrainCommand.status == .error {
+        throw terrainCommand.error ?? RenderFailure.unavailable("Foreground crater catalog failed")
+    }
+    try writePNG(texture: output, to: directory.appendingPathComponent("metal-craters-foreground.png"))
+    captures.append("metal-craters-foreground.png")
     let report: [String: Any] = [
         "gpu": renderer.device.name, "width": 3440, "height": 1440, "samples": stats.samples,
         "gpuMedianMs": stats.median, "gpuP95ms": stats.p95, "gpuMaxMs": stats.max, "gpuErrors": stats.errors,
